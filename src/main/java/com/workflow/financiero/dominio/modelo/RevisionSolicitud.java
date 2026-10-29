@@ -2,6 +2,7 @@ package com.workflow.financiero.dominio.modelo;
 
 import com.workflow.financiero.dominio.estado.EstadoRevision;
 import com.workflow.financiero.dominio.estado.NivelRiesgo;
+import com.workflow.financiero.dominio.excepcion.TransicionEstadoInvalidaException;
 import com.workflow.financiero.dominio.temporal.Instantes;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -98,5 +99,18 @@ public class RevisionSolicitud {
         this.justificacion = justificacion;
         this.estado = EstadoRevision.RECIBIDA;
         this.creadoEn = Instantes.ahora();
+    }
+
+    public void cambiarEstado(EstadoRevision nuevoEstado) {
+        if (nuevoEstado == null) {
+            throw new TransicionEstadoInvalidaException("El estado nuevo es obligatorio");
+        }
+        if (!estado.puedeTransicionarA(nuevoEstado)) {
+            throw new TransicionEstadoInvalidaException(
+                "No se puede pasar de " + estado + " a " + nuevoEstado);
+        }
+
+        this.estado = nuevoEstado;
+        this.actualizadoEn = Instantes.ahora();
     }
 }

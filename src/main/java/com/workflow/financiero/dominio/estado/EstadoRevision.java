@@ -15,5 +15,35 @@ public enum EstadoRevision {
     REVISION_MANUAL,
     RECHAZADA,
     CANCELADA,
-    EJECUTADA
+    EJECUTADA;
+
+    public boolean puedeTransicionarA(EstadoRevision destino) {
+        if (destino == null) {
+            return false;
+        }
+
+        return switch (this) {
+            case RECIBIDA -> destino == VALIDANDO;
+            case VALIDANDO -> destino == EVALUANDO_RIESGO;
+            case EVALUANDO_RIESGO -> destino == PENDIENTE_APROBACION
+                || destino == APROBADA
+                || destino == REVISION_MANUAL;
+            case PENDIENTE_APROBACION -> destino == APROBADA || destino == RECHAZADA;
+            case APROBADA -> destino == EJECUTANDO;
+            case EJECUTANDO -> destino == EJECUTADA
+                || destino == RESULTADO_DESCONOCIDO
+                || destino == COMPENSANDO
+                || destino == REVISION_MANUAL;
+            case RESULTADO_DESCONOCIDO -> destino == EJECUTADA
+                || destino == COMPENSANDO
+                || destino == REVISION_MANUAL;
+            case COMPENSANDO -> destino == CANCELADA || destino == REVISION_MANUAL;
+            case REVISION_MANUAL -> destino == EVALUANDO_RIESGO;
+            case RECHAZADA, CANCELADA, EJECUTADA -> false;
+        };
+    }
+
+    public boolean esTerminal() {
+        return this == RECHAZADA || this == CANCELADA || this == EJECUTADA;
+    }
 }
