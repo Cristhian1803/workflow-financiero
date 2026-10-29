@@ -20,6 +20,8 @@ Crear el archivo de variables locales:
 Copy-Item .env.example .env
 ```
 
+Compose usa `POSTGRES_*`; Spring usa `DB_URL`, `DB_USER` y `DB_PASSWORD` (valores de ejemplo en `.env.example`).
+
 Levantar PostgreSQL 16:
 
 ```powershell
@@ -44,7 +46,10 @@ chmod +x mvnw   # solo si el archivo no tiene permiso de ejecucion
 
 ## Ejecutar la aplicacion
 
+Perfil `desarrollo` (usuario HTTP basico `demo` / `demo` y API de demostracion del Paso 1):
+
 ```powershell
+$env:SPRING_PROFILES_ACTIVE="desarrollo"
 .\mvnw.cmd spring-boot:run
 ```
 
@@ -52,6 +57,12 @@ Punto de salud:
 
 ```text
 GET http://localhost:8080/actuator/health
+```
+API minima de demostracion (requiere autenticacion):
+
+```text
+POST http://localhost:8080/api/v1/solicitudes-prueba
+GET  http://localhost:8080/api/v1/solicitudes-prueba/{id}
 ```
 
 ## Tecnologias
