@@ -12,4 +12,6 @@ public interface EventoSolicitudRepositorio {
     EventoSolicitud guardar(EventoSolicitud evento);
 
     List<EventoSolicitud> buscarPorSolicitud(UUID solicitudId);
+
+    List<EventoSolicitud> buscarPorRevision(UUID revisionId);
 }

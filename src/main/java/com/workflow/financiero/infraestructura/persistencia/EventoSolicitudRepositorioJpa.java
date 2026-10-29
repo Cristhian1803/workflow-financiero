@@ -30,6 +30,7 @@ public class EventoSolicitudRepositorioJpa implements EventoSolicitudRepositorio
     public List<EventoSolicitud> buscarPorSolicitud(UUID solicitudId) {
         return entityManager.createQuery(
                 "select e from EventoSolicitud e "
+                    + "join fetch e.solicitud "
                     + "join fetch e.revision "
                     + "left join fetch e.actor "
                     + "left join fetch e.rol "
@@ -37,6 +38,22 @@ public class EventoSolicitudRepositorioJpa implements EventoSolicitudRepositorio
                     + "order by e.creadoEn asc, e.id asc",
                 EventoSolicitud.class)
             .setParameter("solicitudId", solicitudId)
+            .getResultList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<EventoSolicitud> buscarPorRevision(UUID revisionId) {
+        return entityManager.createQuery(
+                "select e from EventoSolicitud e "
+                    + "join fetch e.solicitud "
+                    + "join fetch e.revision "
+                    + "left join fetch e.actor "
+                    + "left join fetch e.rol "
+                    + "where e.revision.id = :revisionId "
+                    + "order by e.creadoEn asc, e.id asc",
+                EventoSolicitud.class)
+            .setParameter("revisionId", revisionId)
             .getResultList();
     }
 }
