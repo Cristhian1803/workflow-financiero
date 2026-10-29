@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: workflow-financiero
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/workflow_financiero}
+    username: ${DB_USER:workflow}
+    password: ${DB_PASSWORD:workflow}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  flowable:
+    async-executor-activate: true
+    database-schema-update: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
