@@ -1,1 +1,9 @@
 spec/
+target/
+.env
+.env.*
+!.env.example
+*.log
+.vscode/settings.json
+.idea/
+*.iml
