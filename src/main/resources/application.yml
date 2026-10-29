@@ -11,9 +11,11 @@ spring:
       ddl-auto: validate
   flyway:
     enabled: true
-  flowable:
-    async-executor-activate: true
-    database-schema-update: true
+
+flowable:
+  async-executor-activate: true
+  database-schema-update: true
+  process-definition-location-prefix: classpath:/processes/
 
 management:
   endpoints:
