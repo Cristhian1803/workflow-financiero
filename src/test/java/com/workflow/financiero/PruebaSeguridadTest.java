@@ -358,6 +358,57 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
     }
 
     @Test
+    @DisplayName("La bandeja exige autenticación")
+    void bandejaExigeAutenticacion() throws Exception {
+        mockMvc.perform(get(RUTA_TAREAS))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"));
+    }
+
+    @Test
+    @DisplayName("La bandeja rechaza a un solicitante sin rol de aprobación")
+    void bandejaRechazaSolicitante() throws Exception {
+        mockMvc.perform(conToken(
+                get(RUTA_TAREAS), iniciarSesion("demo", "demo")))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    @Test
+    @DisplayName("La bandeja rechaza al administrador sin rol funcional")
+    void bandejaRechazaAdministrador() throws Exception {
+        mockMvc.perform(conToken(
+                get(RUTA_TAREAS), iniciarSesion("admin", "demo")))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    @Test
+    @DisplayName("La bandeja admite a un supervisor")
+    void bandejaAdmiteSupervisor() throws Exception {
+        mockMvc.perform(conToken(
+                get(RUTA_TAREAS), iniciarSesion("supervisor", "demo")))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("El token no permite saltarse la elegibilidad de la tarea")
+    void tokenNoSaltaElegibilidadDeLaTarea() throws Exception {
+        Instant ahora = Instant.now();
+        String token = firmar(
+            ahora,
+            ahora.plus(10, ChronoUnit.MINUTES),
+            EMISOR_JWT,
+            "demo",
+            List.of("SUPERVISOR")
+        );
+
+        mockMvc.perform(conToken(get(RUTA_TAREAS), token))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    @Test
     @DisplayName("El token no aparece en los logs")
     void noRegistraTokenEnLogs() throws Exception {
         Logger raiz = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
@@ -394,12 +445,28 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
     }
 
     private String firmar(Instant emitido, Instant expira, String emisor) {
+        return firmar(
+            emitido,
+            expira,
+            emisor,
+            "demo",
+            List.of("SOLICITANTE")
+        );
+    }
+
+    private String firmar(
+        Instant emitido,
+        Instant expira,
+        String emisor,
+        String sujeto,
+        List<String> roles
+    ) {
         JwtClaimsSet claims = JwtClaimsSet.builder()
             .issuer(emisor)
-            .subject("demo")
+            .subject(sujeto)
             .issuedAt(emitido)
             .expiresAt(expira)
-            .claim("roles", List.of("SOLICITANTE"))
+            .claim("roles", roles)
             .build();
 
         return jwtEncoder.encode(JwtEncoderParameters.from(

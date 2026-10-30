@@ -79,6 +79,16 @@ public class ConfiguracionSeguridad {
                     HttpMethod.POST,
                     "/api/v1/solicitudes"
                 ).hasRole("SOLICITANTE");
+                autorizacion.requestMatchers(
+                    HttpMethod.GET,
+                    "/api/v1/tareas-aprobacion"
+                ).hasAnyRole(
+                    "SUPERVISOR",
+                    "GERENTE",
+                    "RIESGOS",
+                    "GERENTE_GENERAL",
+                    "JEFE_RIESGOS"
+                );
                 autorizacion.anyRequest().authenticated();
             })
             .oauth2ResourceServer(oauth2 -> oauth2
