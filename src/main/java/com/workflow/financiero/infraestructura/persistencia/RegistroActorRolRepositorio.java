@@ -3,6 +3,7 @@ package com.workflow.financiero.infraestructura.persistencia;
 import com.workflow.financiero.dominio.modelo.RegistroActorRol;
 import com.workflow.financiero.dominio.modelo.RegistroActorRolId;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -33,4 +34,13 @@ public interface RegistroActorRolRepositorio
         @Param("rolCodigo") String rolCodigo,
         @Param("fecha") Instant fecha
     );
+
+    @Query("""
+        select r
+        from RegistroActorRol r
+        join fetch r.rol
+        join fetch r.usuario
+        where r.solicitud.id = :solicitudId
+        """)
+    List<RegistroActorRol> buscarPorSolicitud(@Param("solicitudId") UUID solicitudId);
 }
