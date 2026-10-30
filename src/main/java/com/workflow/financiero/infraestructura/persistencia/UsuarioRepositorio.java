@@ -9,4 +9,6 @@ public interface UsuarioRepositorio extends JpaRepository<Usuario, java.util.UUI
 
     @EntityGraph(attributePaths = {"roles", "perfilRiesgo"})
     Optional<Usuario> findByUsuario(String usuario);
+
+    boolean existsByUsuario(String usuario);
 }

@@ -1,6 +1,9 @@
 spring:
   application:
     name: workflow-financiero
+  config:
+    # Permite leer variables locales desde .env sin versionar secretos.
+    import: optional:file:.env[.properties]
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/workflow_financiero}
     username: ${DB_USER:workflow}
@@ -21,6 +24,12 @@ flowable:
   database-schema-update: true
   process-definition-location-prefix: classpath:/processes/
 
+seguridad:
+  jwt:
+    secreto: ${JWT_SECRETO:}
+    emisor: ${JWT_EMISOR:workflow-financiero}
+    expiracion-minutos: ${JWT_EXPIRACION_MINUTOS:60}
+
 management:
   endpoints:
     web:
@@ -33,3 +42,7 @@ management:
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+
+logging:
+  pattern:
+    level: "%5p [corr=%X{identificadorCorrelacion:-}]"

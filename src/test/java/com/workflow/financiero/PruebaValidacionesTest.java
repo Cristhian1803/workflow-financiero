@@ -306,6 +306,8 @@ class PruebaValidacionesTest extends PruebaIntegracionBase {
     @DisplayName("Una entrada inválida no crea solicitud, revisión ni proceso")
     void unaEntradaInvalidaNoCreaSolicitudRevisionNiProceso() {
         Usuario usuario = crearUsuario("NORMAL");
+        Long ejecucionesAntes = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM act_ru_execution", Long.class);
 
         assertThat(erroresDe(conTipo(usuario, "NO_EXISTE")))
             .extracting(ErrorCampo::campo)
@@ -317,8 +319,11 @@ class PruebaValidacionesTest extends PruebaIntegracionBase {
             "SELECT COUNT(*) FROM revision_solicitud", Long.class)).isZero();
         assertThat(jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM evento_solicitud", Long.class)).isZero();
+        // El contenedor se comparte con pruebas de Flowable; se comprueba que
+        // esta validación no agregue ejecuciones nuevas.
         assertThat(jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM act_ru_execution", Long.class)).isZero();
+            "SELECT COUNT(*) FROM act_ru_execution", Long.class))
+            .isEqualTo(ejecucionesAntes);
     }
 
     @Test

@@ -2,10 +2,6 @@ spring:
   config:
     activate:
       on-profile: desarrollo
-  security:
-    user:
-      name: ${APP_USER:demo}
-      password: ${APP_PASSWORD:demo}
 
 flowable:
   async-executor-activate: true
