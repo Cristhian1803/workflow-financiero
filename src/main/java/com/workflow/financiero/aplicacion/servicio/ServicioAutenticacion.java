@@ -1,8 +1,6 @@
 package com.workflow.financiero.aplicacion.servicio;
 
 import com.workflow.financiero.aplicacion.excepcion.CredencialesInvalidasException;
-import com.workflow.financiero.dominio.modelo.Usuario;
-import com.workflow.financiero.infraestructura.persistencia.UsuarioRepositorio;
 import com.workflow.financiero.infraestructura.seguridad.PropiedadesJwt;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -22,7 +20,6 @@ import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Autentica usuarios y emite tokens JWT con sus roles actuales.
@@ -36,7 +33,6 @@ public class ServicioAutenticacion {
     private final AuthenticationManager authenticationManager;
     private final JwtEncoder jwtEncoder;
     private final PropiedadesJwt propiedadesJwt;
-    private final UsuarioRepositorio usuarioRepositorio;
 
     public TokenEmitido iniciarSesion(String usuario, String clave) {
         String normalizado = NormalizadorUsuario.normalizar(usuario);
@@ -73,15 +69,5 @@ public class ServicioAutenticacion {
         ));
 
         return new TokenEmitido(token.getTokenValue(), expiraEn);
-    }
-
-    @Transactional(readOnly = true)
-    public Usuario obtenerActual(String nombreUsuario) {
-        String normalizado = NormalizadorUsuario.normalizar(nombreUsuario);
-        if (normalizado == null || normalizado.isBlank()) {
-            throw new CredencialesInvalidasException();
-        }
-        return usuarioRepositorio.findByUsuario(normalizado)
-            .orElseThrow(CredencialesInvalidasException::new);
     }
 }

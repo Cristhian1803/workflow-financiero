@@ -4,11 +4,13 @@ import com.workflow.financiero.api.contrato.autenticacion.IniciarSesionPeticion;
 import com.workflow.financiero.api.contrato.autenticacion.IniciarSesionRespuesta;
 import com.workflow.financiero.api.contrato.autenticacion.UsuarioActualRespuesta;
 import com.workflow.financiero.aplicacion.servicio.ServicioAutenticacion;
+import com.workflow.financiero.aplicacion.servicio.ServicioUsuarioActual;
 import com.workflow.financiero.aplicacion.servicio.TokenEmitido;
-import com.workflow.financiero.dominio.modelo.Rol;
-import com.workflow.financiero.dominio.modelo.Usuario;
+import com.workflow.financiero.aplicacion.servicio.UsuarioActual;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -24,13 +26,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/autenticacion")
 @RequiredArgsConstructor
+@Tag(name = "Autenticación", description = "Inicio de sesión y usuario actual")
 public class ControladorAutenticacion {
 
     private static final String TIPO_TOKEN = "Bearer";
 
     private final ServicioAutenticacion servicioAutenticacion;
+    private final ServicioUsuarioActual servicioUsuarioActual;
 
     @PostMapping("/iniciar-sesion")
+    @Operation(
+        summary = "Iniciar sesión",
+        description = "Emite un token JWT firmado con los roles vigentes."
+    )
+    @SecurityRequirements
     IniciarSesionRespuesta iniciarSesion(
         @Valid @RequestBody IniciarSesionPeticion peticion
     ) {
@@ -41,20 +50,15 @@ public class ControladorAutenticacion {
     }
 
     @GetMapping("/yo")
+    @Operation(summary = "Consultar el usuario autenticado")
     UsuarioActualRespuesta usuarioActual(@AuthenticationPrincipal Jwt jwt) {
-        Usuario usuario = servicioAutenticacion.obtenerActual(jwt.getSubject());
-        List<String> roles = usuario.getRoles().stream()
-            .filter(Rol::isActivo)
-            .map(Rol::getCodigo)
-            .sorted()
-            .toList();
-
+        UsuarioActual usuario = servicioUsuarioActual.obtenerActual(jwt.getSubject());
         return new UsuarioActualRespuesta(
-            usuario.getId(),
-            usuario.getUsuario(),
-            usuario.getNombre(),
-            roles,
-            usuario.getPerfilRiesgo().getCodigo()
+            usuario.id(),
+            usuario.usuario(),
+            usuario.nombre(),
+            usuario.roles(),
+            usuario.perfilRiesgo()
         );
     }
 }
