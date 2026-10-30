@@ -142,6 +142,75 @@ Swagger UI en desarrollo:
 http://localhost:8080/swagger-ui.html
 ```
 
+## API de solicitudes
+
+La creación requiere el rol `SOLICITANTE` y termina en `EVALUANDO_RIESGO`. No inicia el proceso BPMN ni abre tareas.
+
+| Método | Ruta | Autorización |
+|---|---|---|
+| `POST` | `/api/v1/solicitudes` | `SOLICITANTE` |
+| `GET` | `/api/v1/solicitudes/{id}` | Dueño o administrador |
+| `GET` | `/api/v1/solicitudes` | Dueño o administrador |
+| `GET` | `/api/v1/solicitudes/{id}/historial` | Dueño, auditor o administrador |
+| `GET` | `/api/v1/solicitudes/{id}/proceso` | Dueño o administrador |
+
+### Crear
+
+```powershell
+$creacion = Invoke-RestMethod `
+  -Method Post `
+  -Uri http://localhost:8080/api/v1/solicitudes `
+  -Headers @{ Authorization = "Bearer $($respuesta.token)" } `
+  -ContentType "application/json" `
+  -Body '{"tipoOperacion":"NORMAL","monto":25000000,"moneda":"PYG","descripcion":"Pago de demostracion","justificacion":"Operacion autorizada para pruebas"}'
+
+$creacion
+```
+
+La respuesta `201` incluye `id`, `idRevision`, `revision`, `solicitante`, tipo, monto, moneda, descripción, justificación, `estado`, `nivelRiesgo`, `aprobacionesRequeridas`, `requiereEvaluacionExterna`, `fechaCreacion` y `fechaActualizacion`.
+
+Para 25 millones el riesgo es `BAJO` y el plan es `SUPERVISOR`. Para 100 millones el riesgo es `MEDIO` y el plan es `GERENTE` y `SUPERVISOR`. Para 250 millones el riesgo es `ALTO`, el plan incluye `GERENTE`, `RIESGOS` y `SUPERVISOR`, y `requiereEvaluacionExterna` es `true`.
+
+### Consultar detalle
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/v1/solicitudes/$($creacion.id)" `
+  -Headers @{ Authorization = "Bearer $($respuesta.token)" }
+```
+
+### Listar y paginar
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/v1/solicitudes?pagina=0&tamano=20&estado=EVALUANDO_RIESGO" `
+  -Headers @{ Authorization = "Bearer $($respuesta.token)" }
+```
+
+`pagina` empieza en `0`; `tamano` admite de `1` a `100`. El administrador ve todas las solicitudes; el solicitante solo las propias.
+
+### Historial
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/v1/solicitudes/$($creacion.id)/historial" `
+  -Headers @{ Authorization = "Bearer $($respuesta.token)" }
+```
+
+Devuelve eventos inmutables con actor, rol, estados, detalle, correlación y fecha.
+
+### Proceso
+
+```powershell
+Invoke-RestMethod `
+  -Uri "http://localhost:8080/api/v1/solicitudes/$($creacion.id)/proceso" `
+  -Headers @{ Authorization = "Bearer $($respuesta.token)" }
+```
+
+En esta etapa responde `iniciado = false`, `identificadorProceso = null` y `tareas = []`.
+
+Una solicitud ajena no visible responde `404`; un usuario sin el rol necesario responde `403`.
+
 ## API de demostración
 
 Requiere `Authorization: Bearer <token>`:
@@ -156,9 +225,14 @@ No es la API final de solicitudes.
 ## Limitaciones de esta versión
 
 - No hay refresh tokens, revocación inmediata ni recuperación de contraseña.
-- Un token sigue válido hasta su vencimiento aunque el usuario se desactive después.
+- Un token sigue válido hasta su vencimiento; el usuario se revalida como activo en cada consulta, pero los roles del token no cambian hasta que vence.
 - Los roles del token no cambian hasta que vence; `/autenticacion/yo` muestra los roles actuales de la base.
 - El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
+- La API de solicitudes no aprueba, rechaza, cancela, reenvía ni ejecuta operaciones.
+- La creación no inicia Flowable ni abre tareas aun.
+- El detalle recalcula el plan de aprobación con las políticas vigentes, porque el plan no se persiste.
+- El auditor puede consultar el historial, pero no el detalle ni el proceso de una solicitud ajena.
+- La API `/api/v1/solicitudes-prueba` es la demostración de prueba y no debe usarse para operaciones reales.
 
 ## Tecnologías
 
