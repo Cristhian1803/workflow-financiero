@@ -126,7 +126,9 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         sembrador.sembrar();
         jdbcTemplate.update(
             "UPDATE usuario SET usua_activo = TRUE "
-                + "WHERE usua_usuario IN ('demo', 'demo2', 'auditor', 'admin')");
+                + "WHERE usua_usuario IN ('demo', 'demo2', 'auditor', 'admin', "
+                + "'supervisor', 'gerente', 'riesgos', 'gerente_general', "
+                + "'jefe_riesgos', 'operaciones')");
     }
 
     @AfterEach
@@ -414,6 +416,7 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(taskService.createTaskQuery()
             .processInstanceId(procesoId)
             .count()).isZero();
+        assertThat(contarTareasAprobacionTotales()).isZero();
 
         assertThat(tiposEvento(creada.id())).contains(
             "PROCESO_INICIADO",
@@ -464,7 +467,8 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         TareaProceso tareaProceso = estado.tareas().getFirst();
         assertThat(tareaProceso.rol()).isEqualTo("SUPERVISOR");
         assertThat(tareaProceso.estado()).isEqualTo("PENDIENTE");
-        assertThat(tareaProceso.fechaVencimiento()).isNull();
+        assertThat(tareaProceso.fechaVencimiento()).isNotNull();
+        assertThat(contarTareasAprobacionTotales()).isEqualTo(1);
         assertThat(adaptadorEjecucion.observaciones(creada.idRevision())).isEmpty();
     }
 
@@ -481,6 +485,7 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(estado.estadoRevision()).isEqualTo(EstadoRevision.APROBADA);
         assertThat(estado.actividadesActivas()).isEmpty();
         assertThat(estado.tareas()).isEmpty();
+        assertThat(contarTareasAprobacionTotales()).isZero();
     }
 
     @Test
@@ -522,6 +527,7 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(contarEventos()).isZero();
         assertThat(contarInstanciasProceso()).isZero();
         assertThat(contarHistoricosProceso()).isZero();
+        assertThat(contarTareasAprobacionTotales()).isZero();
     }
 
     private SolicitudDetalle registrar(UsuarioActual usuario, long monto) {
@@ -583,6 +589,11 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         return historyService.createHistoricProcessInstanceQuery()
             .processDefinitionKey(CLAVE_PROCESO)
             .count();
+    }
+
+    private Long contarTareasAprobacionTotales() {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM tarea_aprobacion", Long.class);
     }
 
     private void limpiarProcesos() {

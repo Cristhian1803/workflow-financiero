@@ -50,7 +50,8 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
 
     private static final String RUTA = "/api/v1/solicitudes";
     private static final String USUARIOS_DEMO =
-        "'demo', 'demo2', 'auditor', 'admin'";
+        "'demo', 'demo2', 'auditor', 'admin', 'supervisor', 'gerente', "
+            + "'riesgos', 'gerente_general', 'jefe_riesgos', 'operaciones'";
 
     @Autowired
     MockMvc mockMvc;
@@ -143,12 +144,16 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
         assertThat(veinticinco.get("nivelRiesgo").asText()).isEqualTo("BAJO");
         assertThat(veinticinco.get("estado").asText())
             .isEqualTo("PENDIENTE_APROBACION");
+        assertThat(contarTareasAprobacion(veinticinco.get("id").asText()))
+            .isEqualTo(1);
 
         JsonNode cien = crear("demo", peticion(100_000_000, "NORMAL"));
         assertThat(roles(cien))
             .containsExactlyInAnyOrder("SUPERVISOR", "GERENTE");
         assertThat(cien.get("nivelRiesgo").asText()).isEqualTo("MEDIO");
         assertThat(cien.get("estado").asText()).isEqualTo("PENDIENTE_APROBACION");
+        assertThat(contarTareasAprobacion(cien.get("id").asText()))
+            .isEqualTo(2);
 
         JsonNode doscientosCincuenta = crear(
             "demo", peticion(250_000_000, "NORMAL"));
@@ -160,6 +165,8 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
             .isTrue();
         assertThat(doscientosCincuenta.get("estado").asText())
             .isEqualTo("PENDIENTE_APROBACION");
+        assertThat(contarTareasAprobacion(doscientosCincuenta.get("id").asText()))
+            .isEqualTo(3);
         assertThat(contarEventos(doscientosCincuenta.get("id").asText()))
             .isEqualTo(8);
         assertThat(tiposEvento(doscientosCincuenta.get("id").asText()))
@@ -213,7 +220,14 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
         assertThat(tarea).isNotNull();
         assertThat(tarea.getTaskDefinitionKey()).isEqualTo("tareaSupervisor");
         assertThat(tarea.getName()).isEqualTo("Aprobación de Supervisor");
-        assertThat(contarTareasAprobacion(solicitudId)).isZero();
+
+        Map<String, Object> tareaNegocio = tareaAprobacion(solicitudId, "SUPERVISOR");
+        assertThat(contarTareasAprobacion(solicitudId)).isEqualTo(1);
+        assertThat(tareaNegocio.get("tareapro_identificador_tarea_motor"))
+            .isEqualTo(tarea.getId());
+        assertThat(tareaNegocio.get("tareapro_estado")).isEqualTo("PENDIENTE");
+        assertThat(tareaNegocio.get("tareapro_fecha_vencimiento")).isNotNull();
+        assertThat(tareaNegocio.get("tareapro_asignado_usua_id")).isNull();
     }
 
     @Test
@@ -444,7 +458,7 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
                 .value("Aprobación de Supervisor"))
             .andExpect(jsonPath("$.tareas[0].estado").value("PENDIENTE"))
             .andExpect(jsonPath("$.tareas[0].asignadoA").doesNotExist())
-            .andExpect(jsonPath("$.tareas[0].fechaVencimiento").doesNotExist());
+            .andExpect(jsonPath("$.tareas[0].fechaVencimiento").isNotEmpty());
 
         mockMvc.perform(conToken(get(RUTA + "/" + id + "/proceso"), token("admin")))
             .andExpect(status().isOk());
@@ -683,6 +697,20 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
                 + "WHERE r.revisoli_solifina_id = ?",
             Long.class,
             UUID.fromString(solicitudId));
+    }
+
+    private Map<String, Object> tareaAprobacion(String solicitudId, String rol) {
+        return jdbcTemplate.queryForMap(
+            "SELECT t.tareapro_id, t.tareapro_identificador_tarea_motor, "
+                + "t.tareapro_estado, t.tareapro_fecha_vencimiento, "
+                + "t.tareapro_asignado_usua_id "
+                + "FROM tarea_aprobacion t "
+                + "JOIN revision_solicitud r "
+                + "ON r.revisoli_id = t.tareapro_revisoli_id "
+                + "WHERE r.revisoli_solifina_id = ? "
+                + "AND t.tareapro_rol_codigo = ?",
+            UUID.fromString(solicitudId),
+            rol);
     }
 
     private Long contarInstanciasProceso() {

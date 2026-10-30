@@ -6,12 +6,16 @@ import com.workflow.financiero.dominio.estado.EstadoRevision;
 import com.workflow.financiero.dominio.excepcion.SolicitudNoEncontradaException;
 import com.workflow.financiero.dominio.modelo.RevisionSolicitud;
 import com.workflow.financiero.dominio.modelo.SolicitudFinanciera;
+import com.workflow.financiero.dominio.modelo.TareaAprobacion;
 import com.workflow.financiero.dominio.regla.aprobacion.ContextoAprobacion;
 import com.workflow.financiero.dominio.regla.riesgo.ClasificadorRiesgoInterno;
 import com.workflow.financiero.infraestructura.persistencia.EventoSolicitudRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.SolicitudFinancieraRepositorio;
+import com.workflow.financiero.infraestructura.persistencia.TareaAprobacionRepositorio;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -38,6 +42,7 @@ public class ServicioConsultaSolicitud {
     private final ServicioAutorizacionConsulta autorizacion;
     private final CalculadoraPlanAprobacion calculadoraPlan;
     private final PuertoProceso puertoProceso;
+    private final TareaAprobacionRepositorio tareaRepositorio;
 
     public SolicitudDetalle obtener(UUID id, UsuarioActual actual) {
         SolicitudFinanciera solicitud = buscarVisible(id);
@@ -94,7 +99,7 @@ public class ServicioConsultaSolicitud {
 
     public EstadoProceso proceso(UUID id, UsuarioActual actual) {
         SolicitudFinanciera solicitud = buscarVisible(id);
-        autorizacion.verificarDetalle(solicitud, actual);
+        autorizacion.verificarProceso(solicitud, actual);
 
         RevisionSolicitud revision = revisionActual(solicitud);
         String identificadorProceso = revision.getIdentificadorProceso();
@@ -119,11 +124,22 @@ public class ServicioConsultaSolicitud {
         List<String> actividades = activo
             ? puertoProceso.actividadesActivas(identificadorProceso)
             : List.of();
-        List<TareaProceso> tareas = activo
-            ? puertoProceso.tareasActivas(identificadorProceso).stream()
-                .map(this::tarea)
-                .toList()
-            : List.of();
+        List<TareaProceso> tareas = List.of();
+        if (activo) {
+            Map<String, TareaAprobacion> tareasNegocio = tareaRepositorio
+                .buscarPorRevision(revision.getId())
+                .stream()
+                .filter(tarea -> tarea.getIdentificadorTareaMotor() != null)
+                .collect(Collectors.toMap(
+                    TareaAprobacion::getIdentificadorTareaMotor,
+                    tarea -> tarea
+                ));
+            tareas = puertoProceso.tareasActivas(identificadorProceso).stream()
+                .map(tarea -> tarea(
+                    tarea,
+                    tareasNegocio.get(tarea.id())))
+                .toList();
+        }
 
         return new EstadoProceso(
             solicitud.getId(),
@@ -137,18 +153,24 @@ public class ServicioConsultaSolicitud {
         );
     }
 
-    private TareaProceso tarea(TareaMotor tarea) {
-        String rol = tarea.gruposCandidatos().isEmpty()
-            ? null
-            : tarea.gruposCandidatos().getFirst();
+    private TareaProceso tarea(TareaMotor tarea, TareaAprobacion negocio) {
+        String rol = negocio != null
+            ? negocio.getRol().getCodigo()
+            : (tarea.gruposCandidatos().isEmpty()
+                ? null
+                : tarea.gruposCandidatos().getFirst());
+        String asignado = negocio != null && negocio.getAsignado() != null
+            ? negocio.getAsignado().getUsuario()
+            : tarea.asignadoA();
+
         return new TareaProceso(
-            tarea.id(),
+            negocio != null ? negocio.getId().toString() : tarea.id(),
             tarea.definicion(),
             tarea.nombre(),
-            "PENDIENTE",
-            tarea.asignadoA(),
+            negocio != null ? negocio.getEstado().name() : "PENDIENTE",
+            asignado,
             rol,
-            null
+            negocio != null ? negocio.getFechaVencimiento() : null
         );
     }
 

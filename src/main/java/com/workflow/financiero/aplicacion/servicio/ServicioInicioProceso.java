@@ -1,5 +1,6 @@
 package com.workflow.financiero.aplicacion.servicio;
 
+import com.workflow.financiero.aplicacion.configuracion.PropiedadesAprobacion;
 import com.workflow.financiero.aplicacion.puerto.PuertoProceso;
 import com.workflow.financiero.dominio.estado.EstadoRevision;
 import com.workflow.financiero.dominio.evento.TipoEventoSolicitud;
@@ -15,7 +16,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,8 +33,8 @@ public class ServicioInicioProceso {
     private final CalculadoraPlanAprobacion calculadoraPlan;
     private final ServicioEventoSolicitud servicioEvento;
     private final PuertoProceso puertoProceso;
-    private final String duracionNotificacion;
-    private final String duracionReasignacion;
+    private final PropiedadesAprobacion propiedadesAprobacion;
+    private final SincronizadorTareasAprobacion sincronizadorTareas;
 
     public ServicioInicioProceso(
         SolicitudFinancieraRepositorio solicitudRepositorio,
@@ -42,27 +42,16 @@ public class ServicioInicioProceso {
         CalculadoraPlanAprobacion calculadoraPlan,
         ServicioEventoSolicitud servicioEvento,
         PuertoProceso puertoProceso,
-        @Value("${workflow.proceso.duracion-notificacion:PT24H}")
-        String duracionNotificacion,
-        @Value("${workflow.proceso.duracion-reasignacion:PT48H}")
-        String duracionReasignacion
+        PropiedadesAprobacion propiedadesAprobacion,
+        SincronizadorTareasAprobacion sincronizadorTareas
     ) {
-        if (duracionNotificacion == null || duracionNotificacion.isBlank()) {
-            throw new IllegalStateException(
-                "La duración de notificación del proceso es obligatoria");
-        }
-        if (duracionReasignacion == null || duracionReasignacion.isBlank()) {
-            throw new IllegalStateException(
-                "La duración de reasignación del proceso es obligatoria");
-        }
-
         this.solicitudRepositorio = solicitudRepositorio;
         this.revisionRepositorio = revisionRepositorio;
         this.calculadoraPlan = calculadoraPlan;
         this.servicioEvento = servicioEvento;
         this.puertoProceso = puertoProceso;
-        this.duracionNotificacion = duracionNotificacion;
-        this.duracionReasignacion = duracionReasignacion;
+        this.propiedadesAprobacion = propiedadesAprobacion;
+        this.sincronizadorTareas = sincronizadorTareas;
     }
 
     @Transactional
@@ -119,6 +108,8 @@ public class ServicioInicioProceso {
         revision.registrarIdentificadorProceso(identificador);
         revisionRepositorio.saveAndFlush(revision);
 
+        sincronizadorTareas.sincronizar(solicitudId, revisionId, identificador);
+
         servicioEvento.registrar(
             solicitud,
             revision,
@@ -154,8 +145,12 @@ public class ServicioInicioProceso {
             "requiereEvaluacionExterna",
             ClasificadorRiesgoInterno.requiereEvaluacionExterna(revision.getMonto())
         );
-        variables.put("duracionNotificacion", duracionNotificacion);
-        variables.put("duracionReasignacion", duracionReasignacion);
+        variables.put(
+            "duracionNotificacion",
+            propiedadesAprobacion.notificacion().toString());
+        variables.put(
+            "duracionReasignacion",
+            propiedadesAprobacion.reasignacion().toString());
         variables.put("correlacion", correlacion == null ? "" : correlacion);
         return variables;
     }
