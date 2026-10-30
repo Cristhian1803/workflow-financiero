@@ -126,4 +126,16 @@ public class RevisionSolicitud {
         this.nivelRiesgo = nivel;
         this.actualizadoEn = Instantes.ahora();
     }
+
+    public void registrarIdentificadorProceso(String identificador) {
+        if (identificador == null || identificador.isBlank()) {
+            throw new IllegalArgumentException("El identificador de proceso es obligatorio");
+        }
+        if (this.identificadorProceso != null && !this.identificadorProceso.isBlank()) {
+            throw new IllegalStateException("La revisión ya tiene un proceso asociado");
+        }
+
+        this.identificadorProceso = identificador;
+        this.actualizadoEn = Instantes.ahora();
+    }
 }
