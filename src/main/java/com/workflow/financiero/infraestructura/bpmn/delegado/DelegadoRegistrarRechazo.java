@@ -17,6 +17,9 @@ public class DelegadoRegistrarRechazo implements JavaDelegate {
         servicioRechazo.registrar(
             VariablesProceso.uuid(ejecucion, "solicitudId"),
             VariablesProceso.uuid(ejecucion, "revisionId"),
+            VariablesProceso.uuid(ejecucion, "tareaAprobacionId"),
+            VariablesProceso.uuid(ejecucion, "actorId"),
+            VariablesProceso.texto(ejecucion, "rolFuncional"),
             VariablesProceso.texto(ejecucion, "motivo"),
             VariablesProceso.texto(ejecucion, "correlacion")
         );
