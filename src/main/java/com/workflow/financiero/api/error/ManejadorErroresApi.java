@@ -2,9 +2,16 @@ package com.workflow.financiero.api.error;
 
 import com.workflow.financiero.aplicacion.excepcion.CredencialesInvalidasException;
 import com.workflow.financiero.dominio.excepcion.AccesoDenegadoException;
+import com.workflow.financiero.dominio.excepcion.AprobacionNoPermitidaException;
+import com.workflow.financiero.dominio.excepcion.DecisionInvalidaException;
+import com.workflow.financiero.dominio.excepcion.RolAprobadorInvalidoException;
+import com.workflow.financiero.dominio.excepcion.SegregacionFuncionesException;
 import com.workflow.financiero.dominio.excepcion.SolicitudInvalidaException;
 import com.workflow.financiero.dominio.excepcion.SolicitudPruebaInvalidaException;
+import com.workflow.financiero.dominio.excepcion.TareaNoEncontradaException;
+import com.workflow.financiero.dominio.excepcion.TareaYaResueltaException;
 import com.workflow.financiero.dominio.excepcion.TransicionEstadoInvalidaException;
+import com.workflow.financiero.dominio.excepcion.TransicionTareaInvalidaException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Comparator;
 import java.util.List;
@@ -141,6 +148,88 @@ public class ManejadorErroresApi {
             "No se encontró el recurso solicitado",
             peticion
         );
+    }
+
+    @ExceptionHandler(TareaNoEncontradaException.class)
+    ResponseEntity<ProblemDetail> tareaNoEncontrada(
+        TareaNoEncontradaException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.TAREA_NO_ENCONTRADA,
+            "No se encontró la tarea solicitada",
+            peticion
+        );
+    }
+
+    @ExceptionHandler(TareaYaResueltaException.class)
+    ResponseEntity<ProblemDetail> tareaYaResuelta(
+        TareaYaResueltaException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.TAREA_YA_RESUELTA,
+            "La tarea ya fue resuelta",
+            peticion
+        );
+    }
+
+    @ExceptionHandler(TransicionTareaInvalidaException.class)
+    ResponseEntity<ProblemDetail> transicionTareaInvalida(
+        TransicionTareaInvalidaException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.TRANSICION_TAREA_INVALIDA,
+            "La tarea no admite la transición solicitada",
+            peticion
+        );
+    }
+
+    @ExceptionHandler({
+        AprobacionNoPermitidaException.class,
+        RolAprobadorInvalidoException.class
+    })
+    ResponseEntity<ProblemDetail> aprobacionNoPermitida(
+        RuntimeException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.APROBACION_NO_PERMITIDA,
+            "No tiene permiso para resolver esta tarea",
+            peticion
+        );
+    }
+
+    @ExceptionHandler(SegregacionFuncionesException.class)
+    ResponseEntity<ProblemDetail> segregacionFunciones(
+        SegregacionFuncionesException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.SEGREGACION_FUNCIONES,
+            "El actor ya aprobó otro rol funcional en esta solicitud",
+            peticion
+        );
+    }
+
+    @ExceptionHandler(DecisionInvalidaException.class)
+    ResponseEntity<ProblemDetail> decisionInvalida(
+        DecisionInvalidaException excepcion,
+        HttpServletRequest peticion
+    ) {
+        ProblemDetail problema = ProblemaApi.crear(
+            CodigoError.DATOS_INVALIDOS,
+            "La decisión contiene datos inválidos",
+            peticion
+        );
+        ProblemaApi.conErrores(
+            problema,
+            List.of(new ErrorCampoRespuesta(
+                excepcion.getCampo(),
+                excepcion.getMessage()))
+        );
+        return respuesta(problema, CodigoError.DATOS_INVALIDOS.getEstado());
     }
 
     @ExceptionHandler({
