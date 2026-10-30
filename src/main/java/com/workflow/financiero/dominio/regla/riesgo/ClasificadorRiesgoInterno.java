@@ -53,7 +53,7 @@ public class ClasificadorRiesgoInterno {
             motivos.add("perfil de riesgo del solicitante exige ALTO");
         }
 
-        boolean requiereEvaluacionExterna = monto.compareTo(LIMITE_MEDIO) > 0;
+        boolean requiereEvaluacionExterna = requiereEvaluacionExterna(monto);
         if (requiereEvaluacionExterna) {
             motivos.add("evaluación externa requerida por monto > 200000000");
         }
@@ -69,5 +69,13 @@ public class ClasificadorRiesgoInterno {
             false,
             detalle
         );
+    }
+
+    /**
+     * La evaluación externa depende solo del monto. Se expone para que las
+     * consultas no dupliquen el umbral.
+     */
+    public static boolean requiereEvaluacionExterna(BigDecimal monto) {
+        return monto != null && monto.compareTo(LIMITE_MEDIO) > 0;
     }
 }
