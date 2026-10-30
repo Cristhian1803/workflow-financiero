@@ -167,9 +167,10 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
     @DisplayName("Un token alterado es rechazado")
     void rechazaTokenAlterado() throws Exception {
         String token = iniciarSesion("demo", "demo");
-        char ultimo = token.charAt(token.length() - 1);
-        char reemplazo = ultimo == 'a' ? 'b' : 'a';
-        String alterado = token.substring(0, token.length() - 1) + reemplazo;
+        String[] partes = token.split("\\.");
+        char[] firma = partes[2].toCharArray();
+        firma[0] = firma[0] == 'a' ? 'b' : 'a';
+        String alterado = partes[0] + "." + partes[1] + "." + new String(firma);
 
         mockMvc.perform(conToken(get(RUTA_YO), alterado))
             .andExpect(status().isUnauthorized())
