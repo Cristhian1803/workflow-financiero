@@ -28,6 +28,14 @@ import org.springframework.security.web.SecurityFilterChain;
 @RequiredArgsConstructor
 public class ConfiguracionSeguridad {
 
+    private static final String[] ROLES_APROBACION = {
+        "SUPERVISOR",
+        "GERENTE",
+        "RIESGOS",
+        "GERENTE_GENERAL",
+        "JEFE_RIESGOS"
+    };
+
     private final ManejadorErroresSeguridad manejadorErroresSeguridad;
     private final JwtAuthenticationConverter conversorAutenticacionJwt;
     private final Environment entorno;
@@ -82,13 +90,12 @@ public class ConfiguracionSeguridad {
                 autorizacion.requestMatchers(
                     HttpMethod.GET,
                     "/api/v1/tareas-aprobacion"
-                ).hasAnyRole(
-                    "SUPERVISOR",
-                    "GERENTE",
-                    "RIESGOS",
-                    "GERENTE_GENERAL",
-                    "JEFE_RIESGOS"
-                );
+                ).hasAnyRole(ROLES_APROBACION);
+                autorizacion.requestMatchers(
+                    HttpMethod.POST,
+                    "/api/v1/tareas-aprobacion/*/aprobar",
+                    "/api/v1/tareas-aprobacion/*/rechazar"
+                ).hasAnyRole(ROLES_APROBACION);
                 autorizacion.anyRequest().authenticated();
             })
             .oauth2ResourceServer(oauth2 -> oauth2
