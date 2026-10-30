@@ -87,12 +87,18 @@ La API usa JWT firmado.
 
 Solo se crean en `desarrollo` y `pruebas`:
 
-| Usuario | Clave por defecto | Roles | Perfil |
-|---|---|---|---|
-| `demo` | `demo` | `SOLICITANTE` | `NORMAL` |
-| `demo2` | `demo` | `SOLICITANTE` | `NORMAL` |
-| `auditor` | `demo` | `AUDITOR` | `NORMAL` |
-| `admin` | `demo` | `ADMINISTRADOR` | `NORMAL` |
+| Usuario | Clave por defecto | Roles | Perfil | Uso |
+|---|---|---|---|---|
+| `demo` | `demo` | `SOLICITANTE` | `NORMAL` | Solicitante |
+| `demo2` | `demo` | `SOLICITANTE` | `NORMAL` | Solicitante alternativo |
+| `auditor` | `demo` | `AUDITOR` | `NORMAL` | Auditoría |
+| `admin` | `demo` | `ADMINISTRADOR` | `NORMAL` | Administración |
+| `supervisor` | `demo` | `SUPERVISOR` | `NORMAL` | Aprobador |
+| `gerente` | `demo` | `GERENTE` | `NORMAL` | Aprobador y superior de Supervisor |
+| `riesgos` | `demo` | `RIESGOS` | `NORMAL` | Aprobador |
+| `gerente_general` | `demo` | `GERENTE_GENERAL` | `NORMAL` | Delegado de Gerente |
+| `jefe_riesgos` | `demo` | `JEFE_RIESGOS` | `NORMAL` | Delegado de Riesgos |
+| `operaciones` | `demo` | `OPERACIONES` | `NORMAL` | Consulta operativa |
 
 La clave se puede cambiar con `DEMO_CLAVE`. El sembrador es idempotente: no duplica usuarios ni sobrescribe claves existentes.
 
@@ -149,10 +155,11 @@ La creación requiere el rol `SOLICITANTE` e inicia el proceso BPMN. Si el plan 
 | Método | Ruta | Autorización |
 |---|---|---|
 | `POST` | `/api/v1/solicitudes` | `SOLICITANTE` |
-| `GET` | `/api/v1/solicitudes/{id}` | Dueño o administrador |
+| `GET` | `/api/v1/solicitudes/{id}` | Dueño, aprobador relacionado o administrador |
 | `GET` | `/api/v1/solicitudes` | Dueño o administrador |
 | `GET` | `/api/v1/solicitudes/{id}/historial` | Dueño, auditor o administrador |
-| `GET` | `/api/v1/solicitudes/{id}/proceso` | Dueño o administrador |
+| `GET` | `/api/v1/solicitudes/{id}/proceso` | Dueño, aprobador relacionado o administrador |
+| `GET` | `/api/v1/tareas-aprobacion` | Aprobador o delegado |
 
 ### Crear
 
@@ -207,9 +214,38 @@ Invoke-RestMethod `
   -Headers @{ Authorization = "Bearer $($respuesta.token)" }
 ```
 
-La respuesta incluye `identificadorProceso`, `iniciado`, `finalizado`, `estadoRevision`, `actividadesActivas` y `tareas`. Para una instancia activa muestra las tareas humanas del motor; para una finalizada consulta el historial y devuelve las listas vacías.
+La respuesta incluye `identificadorProceso`, `iniciado`, `finalizado`, `estadoRevision`, `actividadesActivas` y `tareas`. Para una instancia activa muestra las tareas humanas con su id de negocio, rol, estado, asignado y vencimiento; para una finalizada consulta el historial y devuelve las listas vacías.
 
-Una solicitud ajena no visible responde `404`; un usuario sin el rol necesario responde `403`.
+Una solicitud ajena no visible responde `404`; un usuario sin el rol necesario responde `403`. El dueño, el administrador y un aprobador con tarea en la revisión actual pueden consultar el detalle y el proceso.
+
+### Tareas de aprobación
+
+```powershell
+$loginSupervisor = Invoke-RestMethod `
+  -Method Post `
+  -Uri http://localhost:8080/api/v1/autenticacion/iniciar-sesion `
+  -ContentType "application/json" `
+  -Body '{"usuario":"supervisor","clave":"demo"}'
+
+Invoke-RestMethod `
+  -Uri http://localhost:8080/api/v1/tareas-aprobacion `
+  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" }
+```
+
+Devuelve solo tareas `PENDIENTE` de la revisión actual visibles para el actor. Incluye las tareas asignadas y las tareas sin asignar de sus roles funcionales o delegados. El creador de la solicitud no ve sus propias tareas. Cada elemento incluye `fechaCreacion`, `fechaNotificacion` calculada a +24h y `fechaVencimiento` guardada a +48h, además de los datos de la solicitud.
+
+Los plazos y superiores se configuran en `flujo.aprobacion`:
+
+```yaml
+flujo:
+  aprobacion:
+    notificacion: ${APROBACION_DURACION_NOTIFICACION:PT24H}
+    reasignacion: ${APROBACION_DURACION_REASIGNACION:PT48H}
+    superiores:
+      SUPERVISOR: GERENTE
+      GERENTE: GERENTE_GENERAL
+      RIESGOS: JEFE_RIESGOS
+```
 
 ## API de demostración
 
@@ -229,8 +265,9 @@ No es la API final de solicitudes.
 - Los roles del token no cambian hasta que vence; `/autenticacion/yo` muestra los roles actuales de la base.
 - El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
 - La API de solicitudes no aprueba, rechaza, cancela, reenvía ni ejecuta operaciones.
-- Las tareas de Flowable todavía no se sincronizan con `tarea_aprobacion`; la bandeja y los endpoints de decisión son posteriores.
+- La bandeja muestra tareas pendientes, pero aprobar y rechazar por HTTP son de la siguiente iteración.
 - Los temporizadores de 24/48 horas están modelados, pero la notificación y la reasignación reales todavía no se implementan.
+- El creador de una solicitud no ve sus propias tareas como accionables.
 - El detalle recalcula el plan de aprobación con las políticas vigentes, porque el plan no se persiste.
 - El auditor puede consultar el historial, pero no el detalle ni el proceso de una solicitud ajena.
 - La API `/api/v1/solicitudes-prueba` es la demostración de prueba y no debe usarse para operaciones reales.

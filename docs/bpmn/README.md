@@ -75,7 +75,8 @@ gráfica y que los diagramas existan y no estén vacíos.
 
 ## Alcance
 
-La API inicia el proceso al crear la solicitud y persiste el identificador de instancia en la
-revisión. El camino sin aprobaciones termina en `APROBADA`; los caminos con aprobaciones
-quedan en `PENDIENTE_APROBACION` esperando las tareas humanas. La sincronización de tareas de
-negocio, la bandeja y las decisiones HTTP se incorporan en las etapas siguientes.
+La API inicia el proceso al crear la solicitud, persiste el identificador de instancia en la
+revisión y sincroniza cada tarea humana con `tarea_aprobacion`. El camino sin aprobaciones
+termina en `APROBADA`; los caminos con aprobaciones quedan en `PENDIENTE_APROBACION` y la
+bandeja `GET /api/v1/tareas-aprobacion` muestra las tareas visibles para cada aprobador o
+delegado. Las decisiones HTTP de aprobar y rechazar se incorporan en la etapa siguiente.
