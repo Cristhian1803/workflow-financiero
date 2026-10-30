@@ -259,10 +259,38 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
     }
 
     @Test
-    @DisplayName("La documentación OpenAPI es pública en pruebas")
+    @DisplayName("La documentación OpenAPI es pública en pruebas y publica bearerAuth")
     void documentacionEsPublicaEnPruebas() throws Exception {
         mockMvc.perform(get("/v3/api-docs"))
-            .andExpect(status().isOk());
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.type")
+                .value("http"))
+            .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.scheme")
+                .value("bearer"))
+            .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.bearerFormat")
+                .value("JWT"));
+    }
+
+    @Test
+    @DisplayName("Un usuario sin SOLICITANTE no puede crear solicitudes")
+    void rechazaCreacionSinRolSolicitante() throws Exception {
+        mockMvc.perform(post("/api/v1/solicitudes")
+                .header(
+                    HttpHeaders.AUTHORIZATION,
+                    "Bearer " + iniciarSesion("auditor", "demo"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "tipoOperacion": "NORMAL",
+                      "monto": 5000000,
+                      "moneda": "PYG",
+                      "descripcion": "Pago de demostración",
+                      "justificacion": "Operación autorizada para pruebas"
+                    }
+                    """))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"))
+            .andExpect(jsonPath("$.identificadorCorrelacion").isNotEmpty());
     }
 
     @Test
