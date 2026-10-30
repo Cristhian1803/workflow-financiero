@@ -113,4 +113,17 @@ public class RevisionSolicitud {
         this.estado = nuevoEstado;
         this.actualizadoEn = Instantes.ahora();
     }
+
+    public void registrarNivelRiesgo(NivelRiesgo nivel) {
+        if (nivel == null) {
+            throw new IllegalArgumentException("El nivel de riesgo es obligatorio");
+        }
+        if (estado != EstadoRevision.VALIDANDO && estado != EstadoRevision.EVALUANDO_RIESGO) {
+            throw new TransicionEstadoInvalidaException(
+                "No se puede registrar el riesgo en estado " + estado);
+        }
+
+        this.nivelRiesgo = nivel;
+        this.actualizadoEn = Instantes.ahora();
+    }
 }
