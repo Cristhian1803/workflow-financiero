@@ -1,6 +1,10 @@
 package com.workflow.financiero;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.reset;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -9,7 +13,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workflow.financiero.aplicacion.configuracion.PropiedadesAprobacion;
+import com.workflow.financiero.aplicacion.puerto.PuertoProceso;
 import com.workflow.financiero.aplicacion.servicio.SincronizadorTareasAprobacion;
+import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada;
 import com.workflow.financiero.infraestructura.seguridad.SembradorUsuariosDemo;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -30,8 +36,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 @SpringBootTest(properties = {
@@ -77,6 +85,12 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
     @Autowired
     PropiedadesAprobacion propiedadesAprobacion;
 
+    @Autowired
+    AdaptadorEjecucionControlada adaptadorEjecucion;
+
+    @MockitoSpyBean
+    PuertoProceso puertoProceso;
+
     @BeforeEach
     void preparar() {
         limpiarProcesos();
@@ -88,6 +102,7 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
 
     @AfterEach
     void limpiar() {
+        reset(puertoProceso);
         quitarSupervisorDemo();
         limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
@@ -355,6 +370,296 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
         }
     }
 
+    @Test
+    @DisplayName("Aprobar Supervisor deja la revisión APROBADA y ejecuta el proceso")
+    void aprobarSupervisorDejaRevisionAprobada() throws Exception {
+        JsonNode creada = crear("demo", 25_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+        String procesoId = identificadorProceso(solicitudId);
+        String tareaId = idTareaAprobacion(solicitudId, "SUPERVISOR");
+
+        JsonNode respuesta = leer(aprobar(
+            tareaId, "supervisor", "Aprobado para continuar")
+            .andExpect(status().isOk())
+            .andReturn());
+
+        assertThat(respuesta.get("idTarea").asText()).isEqualTo(tareaId);
+        assertThat(respuesta.get("decision").asText()).isEqualTo("APROBADA");
+        assertThat(respuesta.get("estadoTarea").asText()).isEqualTo("APROBADA");
+        assertThat(respuesta.get("estadoRevision").asText()).isEqualTo("APROBADA");
+        assertThat(respuesta.get("delegado").asBoolean()).isFalse();
+        assertThat(respuesta.get("fecha").asText()).isNotBlank();
+
+        assertThat(estadoTarea(tareaId)).isEqualTo("APROBADA");
+        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
+        assertThat(contarTareasMotorActivas(procesoId)).isZero();
+        assertThat(contarProcesosFinalizados(procesoId)).isEqualTo(1);
+        assertThat(decision(tareaId).get("deciapro_decision"))
+            .isEqualTo("APROBADA");
+        assertThat(decision(tareaId).get("deciapro_motivo"))
+            .isEqualTo("Aprobado para continuar");
+        assertThat(decision(tareaId).get("deciapro_delegado"))
+            .isEqualTo(false);
+        assertThat(tiposEvento(solicitudId))
+            .contains("APROBACION_REGISTRADA");
+        assertThat(rolRegistrado(solicitudId, "supervisor"))
+            .isEqualTo("SUPERVISOR");
+        assertThat(adaptadorEjecucion.observaciones(
+            UUID.fromString(revisionId))).isNotEmpty();
+        assertThat(bandeja("supervisor").size()).isZero();
+    }
+
+    @Test
+    @DisplayName("La última de dos aprobaciones deja la revisión APROBADA")
+    void ultimaAprobacionDeDosDejaRevisionAprobada() throws Exception {
+        JsonNode creada = crear("demo", 100_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+        String procesoId = identificadorProceso(solicitudId);
+        String tareaSupervisor = idTareaAprobacion(solicitudId, "SUPERVISOR");
+        String tareaGerente = idTareaAprobacion(solicitudId, "GERENTE");
+
+        JsonNode primera = leer(aprobar(
+            tareaSupervisor, "supervisor", null)
+            .andExpect(status().isOk())
+            .andReturn());
+
+        assertThat(primera.get("estadoRevision").asText())
+            .isEqualTo("PENDIENTE_APROBACION");
+        assertThat(estadoTarea(tareaSupervisor)).isEqualTo("APROBADA");
+        assertThat(estadoTarea(tareaGerente)).isEqualTo("PENDIENTE");
+        assertThat(contarTareasMotorActivas(procesoId)).isEqualTo(1);
+
+        JsonNode segunda = leer(aprobar(
+            tareaGerente, "gerente", "Gerencia conforme")
+            .andExpect(status().isOk())
+            .andReturn());
+
+        assertThat(segunda.get("estadoRevision").asText()).isEqualTo("APROBADA");
+        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
+        assertThat(contarTareasMotorActivas(procesoId)).isZero();
+        assertThat(contarProcesosFinalizados(procesoId)).isEqualTo(1);
+        assertThat(rolRegistrado(solicitudId, "supervisor"))
+            .isEqualTo("SUPERVISOR");
+        assertThat(rolRegistrado(solicitudId, "gerente"))
+            .isEqualTo("GERENTE");
+        assertThat(adaptadorEjecucion.observaciones(
+            UUID.fromString(revisionId))).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("Rechazar cancela las demás tareas y termina el proceso")
+    void rechazarCancelaLasDemasTareas() throws Exception {
+        JsonNode creada = crear("demo", 100_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+        String procesoId = identificadorProceso(solicitudId);
+        String tareaSupervisor = idTareaAprobacion(solicitudId, "SUPERVISOR");
+        String tareaGerente = idTareaAprobacion(solicitudId, "GERENTE");
+
+        JsonNode respuesta = leer(rechazar(
+            tareaSupervisor, "supervisor", "El monto no coincide")
+            .andExpect(status().isOk())
+            .andReturn());
+
+        assertThat(respuesta.get("decision").asText()).isEqualTo("RECHAZADA");
+        assertThat(respuesta.get("estadoTarea").asText()).isEqualTo("RECHAZADA");
+        assertThat(respuesta.get("estadoRevision").asText()).isEqualTo("RECHAZADA");
+
+        assertThat(estadoTarea(tareaSupervisor)).isEqualTo("RECHAZADA");
+        assertThat(estadoTarea(tareaGerente)).isEqualTo("CANCELADA");
+        assertThat(estadoRevision(revisionId)).isEqualTo("RECHAZADA");
+        assertThat(contarTareasMotorActivas(procesoId)).isZero();
+        assertThat(contarProcesosFinalizados(procesoId)).isEqualTo(1);
+        assertThat(decision(tareaSupervisor).get("deciapro_decision"))
+            .isEqualTo("RECHAZADA");
+        assertThat(decision(tareaSupervisor).get("deciapro_motivo"))
+            .isEqualTo("El monto no coincide");
+        assertThat(contarRegistros(solicitudId, "supervisor")).isZero();
+        assertThat(tiposEvento(solicitudId))
+            .contains("RECHAZO_REGISTRADO", "TAREA_CANCELADA");
+        assertThat(adaptadorEjecucion.observaciones(
+            UUID.fromString(revisionId))).isEmpty();
+        assertThat(bandeja("gerente").size()).isZero();
+    }
+
+    @Test
+    @DisplayName("Rechazar sin motivo responde 400 y no cambia la tarea")
+    void rechazarSinMotivoResponde400() throws Exception {
+        JsonNode creada = crear("demo", 25_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String tareaId = idTareaAprobacion(solicitudId, "SUPERVISOR");
+
+        rechazar(tareaId, "supervisor", " ")
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+
+        assertThat(estadoTarea(tareaId)).isEqualTo("PENDIENTE");
+        assertThat(contarDecisiones(solicitudId)).isZero();
+    }
+
+    @Test
+    @DisplayName("Un motivo de rechazo mayor a 1000 caracteres responde 400")
+    void rechazarConMotivoDemasiadoLargoResponde400() throws Exception {
+        JsonNode creada = crear("demo", 25_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String tareaId = idTareaAprobacion(solicitudId, "SUPERVISOR");
+
+        rechazar(tareaId, "supervisor", "x".repeat(1001))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+
+        assertThat(estadoTarea(tareaId)).isEqualTo("PENDIENTE");
+    }
+
+    @Test
+    @DisplayName("Un comentario de aprobación mayor a 1000 caracteres responde 400")
+    void aprobarConComentarioDemasiadoLargoResponde400() throws Exception {
+        JsonNode creada = crear("demo", 25_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String tareaId = idTareaAprobacion(solicitudId, "SUPERVISOR");
+
+        aprobar(tareaId, "supervisor", "x".repeat(1001))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+
+        assertThat(estadoTarea(tareaId)).isEqualTo("PENDIENTE");
+    }
+
+    @Test
+    @DisplayName("Una tarea ya resuelta no admite otra decisión")
+    void tareaYaResueltaResponde409() throws Exception {
+        JsonNode creada = crear("demo", 25_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String tareaId = idTareaAprobacion(solicitudId, "SUPERVISOR");
+
+        aprobar(tareaId, "supervisor", null)
+            .andExpect(status().isOk());
+
+        aprobar(tareaId, "supervisor", null)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.codigo").value("TAREA_YA_RESUELTA"));
+
+        rechazar(tareaId, "supervisor", "Ya no corresponde")
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.codigo").value("TAREA_YA_RESUELTA"));
+
+        assertThat(contarDecisiones(solicitudId)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Una tarea inexistente responde 404")
+    void tareaInexistenteResponde404() throws Exception {
+        String tareaId = UUID.randomUUID().toString();
+
+        aprobar(tareaId, "supervisor", null)
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.codigo").value("TAREA_NO_ENCONTRADA"));
+
+        rechazar(tareaId, "supervisor", "No existe")
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.codigo").value("TAREA_NO_ENCONTRADA"));
+    }
+
+    @Test
+    @DisplayName("Una tarea de otro rol no es visible y responde 404")
+    void tareaNoVisibleResponde404() throws Exception {
+        JsonNode creada = crear("demo", 25_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String tareaId = idTareaAprobacion(solicitudId, "SUPERVISOR");
+
+        aprobar(tareaId, "riesgos", null)
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.codigo").value("TAREA_NO_ENCONTRADA"));
+    }
+
+    @Test
+    @DisplayName("El creador con rol de aprobador no puede aprobar su tarea")
+    void creadorConRolNoPuedeAprobar() throws Exception {
+        otorgarSupervisorDemo();
+        JsonNode creada = crear("demo", 25_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String tareaId = idTareaAprobacion(solicitudId, "SUPERVISOR");
+
+        aprobar(tareaId, "demo", null)
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("APROBACION_NO_PERMITIDA"));
+
+        assertThat(estadoTarea(tareaId)).isEqualTo("PENDIENTE");
+        assertThat(contarDecisiones(solicitudId)).isZero();
+    }
+
+    @Test
+    @DisplayName("Una tarea asignada solo la resuelve el asignado")
+    void tareaAsignadaSoloLaResuelveElAsignado() throws Exception {
+        JsonNode creada = crear("demo", 25_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String tareaId = idTareaAprobacion(solicitudId, "SUPERVISOR");
+        asignarTarea(tareaId, "supervisor");
+
+        aprobar(tareaId, "gerente", null)
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.codigo").value("TAREA_NO_ENCONTRADA"));
+
+        aprobar(tareaId, "supervisor", null)
+            .andExpect(status().isOk());
+
+        assertThat(estadoTarea(tareaId)).isEqualTo("APROBADA");
+    }
+
+    @Test
+    @DisplayName("Si falla el motor se revierten decisión, evento, rol y tarea")
+    void siFallaElMotorSeRevierteTodo() throws Exception {
+        JsonNode creada = crear("demo", 25_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+        String procesoId = identificadorProceso(solicitudId);
+        String tareaId = idTareaAprobacion(solicitudId, "SUPERVISOR");
+
+        doThrow(new IllegalStateException("Fallo simulado del motor"))
+            .when(puertoProceso)
+            .completarTarea(anyString(), anyMap());
+
+        aprobar(tareaId, "supervisor", "No debe quedar registrado")
+            .andExpect(status().isInternalServerError())
+            .andExpect(jsonPath("$.codigo").value("ERROR_INTERNO"));
+
+        assertThat(estadoTarea(tareaId)).isEqualTo("PENDIENTE");
+        assertThat(estadoRevision(revisionId)).isEqualTo("PENDIENTE_APROBACION");
+        assertThat(contarDecisiones(solicitudId)).isZero();
+        assertThat(contarRegistros(solicitudId, "supervisor")).isZero();
+        assertThat(tiposEvento(solicitudId))
+            .doesNotContain("APROBACION_REGISTRADA");
+        assertThat(contarTareasMotorActivas(procesoId)).isEqualTo(1);
+    }
+
+    private ResultActions aprobar(
+        String tareaId,
+        String usuario,
+        String comentario
+    ) throws Exception {
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("comentario", comentario);
+        return mockMvc.perform(conToken(
+                post(RUTA_TAREAS + "/" + tareaId + "/aprobar"), token(usuario))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsBytes(cuerpo)));
+    }
+
+    private ResultActions rechazar(
+        String tareaId,
+        String usuario,
+        String motivo
+    ) throws Exception {
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("motivo", motivo);
+        return mockMvc.perform(conToken(
+                post(RUTA_TAREAS + "/" + tareaId + "/rechazar"), token(usuario))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsBytes(cuerpo)));
+    }
+
     private JsonNode crear(String usuario, long monto, String tipoOperacion)
         throws Exception {
         Map<String, Object> cuerpo = new LinkedHashMap<>();
@@ -461,6 +766,85 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
             String.class,
             UUID.fromString(solicitudId),
             rol);
+    }
+
+    private Map<String, Object> decision(String tareaId) {
+        return jdbcTemplate.queryForMap(
+            "SELECT deciapro_decision, deciapro_motivo, deciapro_delegado "
+                + "FROM decision_aprobacion WHERE deciapro_tareapro_id = ?",
+            UUID.fromString(tareaId));
+    }
+
+    private Long contarDecisiones(String solicitudId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM decision_aprobacion d "
+                + "JOIN tarea_aprobacion t "
+                + "ON t.tareapro_id = d.deciapro_tareapro_id "
+                + "JOIN revision_solicitud r "
+                + "ON r.revisoli_id = t.tareapro_revisoli_id "
+                + "WHERE r.revisoli_solifina_id = ?",
+            Long.class,
+            UUID.fromString(solicitudId));
+    }
+
+    private String estadoTarea(String tareaId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT tareapro_estado FROM tarea_aprobacion WHERE tareapro_id = ?",
+            String.class,
+            UUID.fromString(tareaId));
+    }
+
+    private String estadoRevision(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT revisoli_estado FROM revision_solicitud WHERE revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    private List<String> tiposEvento(String solicitudId) {
+        return jdbcTemplate.queryForList(
+            "SELECT evensoli_tipo FROM evento_solicitud "
+                + "WHERE evensoli_solifina_id = ? "
+                + "ORDER BY evensoli_creado_en, evensoli_id",
+            String.class,
+            UUID.fromString(solicitudId));
+    }
+
+    private String rolRegistrado(String solicitudId, String usuario) {
+        return jdbcTemplate.queryForObject(
+            "SELECT regiactorol_rol_codigo FROM registro_actor_rol "
+                + "WHERE regiactorol_solifina_id = ? "
+                + "AND regiactorol_usua_id = "
+                + "(SELECT usua_id FROM usuario WHERE usua_usuario = ?)",
+            String.class,
+            UUID.fromString(solicitudId),
+            usuario);
+    }
+
+    private Long contarRegistros(String solicitudId, String usuario) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM registro_actor_rol "
+                + "WHERE regiactorol_solifina_id = ? "
+                + "AND regiactorol_usua_id = "
+                + "(SELECT usua_id FROM usuario WHERE usua_usuario = ?)",
+            Long.class,
+            UUID.fromString(solicitudId),
+            usuario);
+    }
+
+    private Long contarTareasMotorActivas(String procesoId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM act_ru_task WHERE proc_inst_id_ = ?",
+            Long.class,
+            procesoId);
+    }
+
+    private Long contarProcesosFinalizados(String procesoId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM act_hi_procinst "
+                + "WHERE proc_inst_id_ = ? AND end_time_ IS NOT NULL",
+            Long.class,
+            procesoId);
     }
 
     private void asignarTarea(String tareaId, String usuario) {

@@ -52,6 +52,10 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
     private static final String RUTA_LOGIN = "/api/v1/autenticacion/iniciar-sesion";
     private static final String RUTA_YO = "/api/v1/autenticacion/yo";
     private static final String RUTA_TAREAS = "/api/v1/tareas-aprobacion";
+    private static final String RUTA_TAREA_APROBAR =
+        RUTA_TAREAS + "/00000000-0000-0000-0000-000000000001/aprobar";
+    private static final String RUTA_TAREA_RECHAZAR =
+        RUTA_TAREAS + "/00000000-0000-0000-0000-000000000001/rechazar";
     private static final String USUARIOS_DEMO =
         "'demo', 'demo2', 'auditor', 'admin', 'supervisor', 'gerente', "
             + "'riesgos', 'gerente_general', 'jefe_riesgos', 'operaciones'";
@@ -389,6 +393,70 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
         mockMvc.perform(conToken(
                 get(RUTA_TAREAS), iniciarSesion("supervisor", "demo")))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Aprobar exige autenticación")
+    void aprobarExigeAutenticacion() throws Exception {
+        mockMvc.perform(post(RUTA_TAREA_APROBAR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"));
+    }
+
+    @Test
+    @DisplayName("Aprobar rechaza a un solicitante sin rol de aprobación")
+    void aprobarRechazaSolicitante() throws Exception {
+        mockMvc.perform(conToken(
+                post(RUTA_TAREA_APROBAR), iniciarSesion("demo", "demo"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    @Test
+    @DisplayName("Aprobar rechaza al administrador sin rol funcional")
+    void aprobarRechazaAdministrador() throws Exception {
+        mockMvc.perform(conToken(
+                post(RUTA_TAREA_APROBAR), iniciarSesion("admin", "demo"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    @Test
+    @DisplayName("Aprobar una tarea inexistente responde 404")
+    void aprobarTareaInexistente() throws Exception {
+        mockMvc.perform(conToken(
+                post(RUTA_TAREA_APROBAR), iniciarSesion("supervisor", "demo"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.codigo").value("TAREA_NO_ENCONTRADA"));
+    }
+
+    @Test
+    @DisplayName("Rechazar exige autenticación")
+    void rechazarExigeAutenticacion() throws Exception {
+        mockMvc.perform(post(RUTA_TAREA_RECHAZAR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"motivo\":\"No corresponde\"}"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"));
+    }
+
+    @Test
+    @DisplayName("Rechazar rechaza a un solicitante sin rol de aprobación")
+    void rechazarRechazaSolicitante() throws Exception {
+        mockMvc.perform(conToken(
+                post(RUTA_TAREA_RECHAZAR), iniciarSesion("demo", "demo"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"motivo\":\"No corresponde\"}"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
     }
 
     @Test
