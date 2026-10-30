@@ -1,15 +1,33 @@
 package com.workflow.financiero;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.workflow.financiero.aplicacion.servicio.CrearSolicitudComando;
+import com.workflow.financiero.aplicacion.servicio.EstadoProceso;
+import com.workflow.financiero.aplicacion.servicio.ServicioConsultaSolicitud;
+import com.workflow.financiero.aplicacion.servicio.ServicioInicioProceso;
+import com.workflow.financiero.aplicacion.servicio.ServicioRegistroSolicitud;
+import com.workflow.financiero.aplicacion.servicio.ServicioUsuarioActual;
+import com.workflow.financiero.aplicacion.servicio.SolicitudDetalle;
+import com.workflow.financiero.aplicacion.servicio.TareaProceso;
+import com.workflow.financiero.aplicacion.servicio.UsuarioActual;
+import com.workflow.financiero.dominio.estado.EstadoRevision;
+import com.workflow.financiero.dominio.excepcion.ErrorSimuladoPrueba;
+import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada;
+import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada.ObservacionEjecucion;
+import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada.TipoObservacion;
+import com.workflow.financiero.infraestructura.seguridad.SembradorUsuariosDemo;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.flowable.bpmn.converter.BpmnXMLConverter;
 import org.flowable.bpmn.model.BoundaryEvent;
@@ -29,12 +47,23 @@ import org.flowable.bpmn.model.ServiceTask;
 import org.flowable.bpmn.model.TerminateEventDefinition;
 import org.flowable.bpmn.model.TimerEventDefinition;
 import org.flowable.bpmn.model.UserTask;
+import org.flowable.engine.HistoryService;
 import org.flowable.engine.RepositoryService;
+import org.flowable.engine.RuntimeService;
+import org.flowable.engine.TaskService;
+import org.flowable.engine.history.HistoricProcessInstance;
 import org.flowable.engine.repository.ProcessDefinition;
+import org.flowable.engine.runtime.ProcessInstance;
+import org.flowable.task.api.Task;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Verifica que el proceso principal esté desplegado, que su modelo contenga el
@@ -56,6 +85,55 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
 
     @Autowired
     RepositoryService repositoryService;
+
+    @Autowired
+    RuntimeService runtimeService;
+
+    @Autowired
+    TaskService taskService;
+
+    @Autowired
+    HistoryService historyService;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    PlatformTransactionManager gestorTransacciones;
+
+    @Autowired
+    ServicioRegistroSolicitud servicioRegistro;
+
+    @Autowired
+    ServicioConsultaSolicitud servicioConsulta;
+
+    @Autowired
+    ServicioUsuarioActual servicioUsuarioActual;
+
+    @Autowired
+    ServicioInicioProceso servicioInicioProceso;
+
+    @Autowired
+    AdaptadorEjecucionControlada adaptadorEjecucion;
+
+    @Autowired
+    SembradorUsuariosDemo sembrador;
+
+    @BeforeEach
+    void preparar() {
+        limpiarProcesos();
+        jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
+        sembrador.sembrar();
+        jdbcTemplate.update(
+            "UPDATE usuario SET usua_activo = TRUE "
+                + "WHERE usua_usuario IN ('demo', 'demo2', 'auditor', 'admin')");
+    }
+
+    @AfterEach
+    void limpiar() {
+        limpiarProcesos();
+        jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
+    }
 
     @Test
     @DisplayName("El proceso principal está desplegado y es ejecutable")
@@ -312,6 +390,212 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(png[3]).isEqualTo((byte) 'G');
 
         assertThat(Files.readString(RUTA_SVG)).contains("<svg");
+    }
+
+    @Test
+    @DisplayName("Cinco millones recorre el camino automático y termina APROBADA")
+    void caminoAutomaticoTerminaAprobada() {
+        UsuarioActual demo = servicioUsuarioActual.obtenerActual("demo");
+        SolicitudDetalle creada = registrar(demo, 5_000_000);
+
+        assertThat(creada.estado()).isEqualTo(EstadoRevision.APROBADA);
+        String procesoId = identificadorProceso(creada.id());
+        assertThat(procesoId).isNotBlank();
+        assertThat(runtimeService.createProcessInstanceQuery()
+            .processInstanceId(procesoId)
+            .count()).isZero();
+
+        HistoricProcessInstance historica = historyService
+            .createHistoricProcessInstanceQuery()
+            .processInstanceId(procesoId)
+            .singleResult();
+        assertThat(historica).isNotNull();
+        assertThat(historica.getEndTime()).isNotNull();
+        assertThat(taskService.createTaskQuery()
+            .processInstanceId(procesoId)
+            .count()).isZero();
+
+        assertThat(tiposEvento(creada.id())).contains(
+            "PROCESO_INICIADO",
+            "EJECUCION_PREPARADA",
+            "EJECUCION_CONTROLADA"
+        );
+        assertThat(adaptadorEjecucion.observaciones(creada.idRevision()))
+            .extracting(ObservacionEjecucion::tipo)
+            .containsExactlyInAnyOrder(
+                TipoObservacion.PREPARACION,
+                TipoObservacion.RESULTADO
+            );
+    }
+
+    @Test
+    @DisplayName("Veinticinco millones queda pendiente y abre la tarea de Supervisor")
+    void procesoConAprobacionesQuedaPendiente() {
+        UsuarioActual demo = servicioUsuarioActual.obtenerActual("demo");
+        SolicitudDetalle creada = registrar(demo, 25_000_000);
+
+        assertThat(creada.estado()).isEqualTo(EstadoRevision.PENDIENTE_APROBACION);
+        String procesoId = identificadorProceso(creada.id());
+        assertThat(procesoId).isNotBlank();
+
+        ProcessInstance proceso = runtimeService.createProcessInstanceQuery()
+            .processInstanceId(procesoId)
+            .singleResult();
+        assertThat(proceso).isNotNull();
+        assertThat(proceso.isEnded()).isFalse();
+
+        Task tarea = taskService.createTaskQuery()
+            .processInstanceId(procesoId)
+            .singleResult();
+        assertThat(tarea).isNotNull();
+        assertThat(tarea.getTaskDefinitionKey()).isEqualTo("tareaSupervisor");
+        assertThat(tarea.getName()).isEqualTo("Aprobación de Supervisor");
+        assertThat(taskService.getIdentityLinksForTask(tarea.getId()))
+            .anyMatch(enlace -> "SUPERVISOR".equals(enlace.getGroupId()));
+
+        EstadoProceso estado = servicioConsulta.proceso(creada.id(), demo);
+        assertThat(estado.iniciado()).isTrue();
+        assertThat(estado.finalizado()).isFalse();
+        assertThat(estado.estadoRevision())
+            .isEqualTo(EstadoRevision.PENDIENTE_APROBACION);
+        assertThat(estado.actividadesActivas()).contains("tareaSupervisor");
+        assertThat(estado.tareas()).hasSize(1);
+
+        TareaProceso tareaProceso = estado.tareas().getFirst();
+        assertThat(tareaProceso.rol()).isEqualTo("SUPERVISOR");
+        assertThat(tareaProceso.estado()).isEqualTo("PENDIENTE");
+        assertThat(tareaProceso.fechaVencimiento()).isNull();
+        assertThat(adaptadorEjecucion.observaciones(creada.idRevision())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("El proceso finalizado se consulta desde el historial")
+    void procesoFinalizadoSeConsultaDesdeElHistorial() {
+        UsuarioActual demo = servicioUsuarioActual.obtenerActual("demo");
+        SolicitudDetalle creada = registrar(demo, 5_000_000);
+
+        EstadoProceso estado = servicioConsulta.proceso(creada.id(), demo);
+
+        assertThat(estado.iniciado()).isTrue();
+        assertThat(estado.finalizado()).isTrue();
+        assertThat(estado.estadoRevision()).isEqualTo(EstadoRevision.APROBADA);
+        assertThat(estado.actividadesActivas()).isEmpty();
+        assertThat(estado.tareas()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Una revisión no puede iniciar dos procesos")
+    void noIniciaDosVecesLaMismaRevision() {
+        UsuarioActual demo = servicioUsuarioActual.obtenerActual("demo");
+        SolicitudDetalle creada = registrar(demo, 25_000_000);
+
+        assertThatThrownBy(() -> servicioInicioProceso.iniciar(
+            creada.id(), creada.idRevision(), "corr-duplicado"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("proceso");
+
+        assertThat(runtimeService.createProcessInstanceQuery()
+            .processInstanceBusinessKey(creada.idRevision().toString())
+            .count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Si falla la transacción no queda solicitud ni instancia")
+    void rollbackAlIniciarProceso() {
+        UsuarioActual demo = servicioUsuarioActual.obtenerActual("demo");
+        CrearSolicitudComando comando = new CrearSolicitudComando(
+            "NORMAL",
+            BigDecimal.valueOf(5_000_000),
+            "PYG",
+            "Pago de prueba",
+            "Operación autorizada para pruebas"
+        );
+        TransactionTemplate transaccion = new TransactionTemplate(gestorTransacciones);
+
+        assertThatThrownBy(() -> transaccion.execute(estado -> {
+            servicioRegistro.registrar(demo, comando, "corr-rollback");
+            throw new ErrorSimuladoPrueba();
+        })).isInstanceOf(ErrorSimuladoPrueba.class);
+
+        assertThat(contarSolicitudes()).isZero();
+        assertThat(contarRevisiones()).isZero();
+        assertThat(contarEventos()).isZero();
+        assertThat(contarInstanciasProceso()).isZero();
+        assertThat(contarHistoricosProceso()).isZero();
+    }
+
+    private SolicitudDetalle registrar(UsuarioActual usuario, long monto) {
+        return servicioRegistro.registrar(
+            usuario,
+            new CrearSolicitudComando(
+                "NORMAL",
+                BigDecimal.valueOf(monto),
+                "PYG",
+                "Pago de prueba",
+                "Operación autorizada para pruebas"
+            ),
+            "corr-proceso"
+        );
+    }
+
+    private String identificadorProceso(UUID solicitudId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT r.revisoli_identificador_proceso FROM revision_solicitud r "
+                + "JOIN solicitud_financiera s "
+                + "ON s.solifina_revisoli_actual_id = r.revisoli_id "
+                + "WHERE s.solifina_id = ?",
+            String.class,
+            solicitudId
+        );
+    }
+
+    private List<String> tiposEvento(UUID solicitudId) {
+        return jdbcTemplate.queryForList(
+            "SELECT evensoli_tipo FROM evento_solicitud "
+                + "WHERE evensoli_solifina_id = ?",
+            String.class,
+            solicitudId
+        );
+    }
+
+    private Long contarSolicitudes() {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM solicitud_financiera", Long.class);
+    }
+
+    private Long contarRevisiones() {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM revision_solicitud", Long.class);
+    }
+
+    private Long contarEventos() {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM evento_solicitud", Long.class);
+    }
+
+    private Long contarInstanciasProceso() {
+        return runtimeService.createProcessInstanceQuery()
+            .processDefinitionKey(CLAVE_PROCESO)
+            .count();
+    }
+
+    private Long contarHistoricosProceso() {
+        return historyService.createHistoricProcessInstanceQuery()
+            .processDefinitionKey(CLAVE_PROCESO)
+            .count();
+    }
+
+    private void limpiarProcesos() {
+        runtimeService.createProcessInstanceQuery()
+            .processDefinitionKey(CLAVE_PROCESO)
+            .list()
+            .forEach(proceso -> runtimeService.deleteProcessInstance(
+                proceso.getId(), "Limpieza de prueba"));
+        historyService.createHistoricProcessInstanceQuery()
+            .processDefinitionKey(CLAVE_PROCESO)
+            .list()
+            .forEach(proceso -> historyService.deleteHistoricProcessInstance(
+                proceso.getId()));
     }
 
     private String condicion(Process proceso, String flujoId) {

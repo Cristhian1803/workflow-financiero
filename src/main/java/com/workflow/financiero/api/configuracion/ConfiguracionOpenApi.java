@@ -24,9 +24,9 @@ public class ConfiguracionOpenApi {
                 .title("Workflow Financiero API")
                 .version("v1")
                 .description("Backend de operaciones financieras con BPMN. "
-                    + "La creación de solicitudes deja la revisión en "
-                    + "EVALUANDO_RIESGO; el proceso se inicia en una etapa "
-                    + "posterior."))
+                    + "La creación de solicitudes inicia el proceso y deja la "
+                    + "revisión en APROBADA o PENDIENTE_APROBACION según el "
+                    + "plan de aprobación."))
             .components(new Components().addSecuritySchemes(
                 ESQUEMA_BEARER,
                 new SecurityScheme()

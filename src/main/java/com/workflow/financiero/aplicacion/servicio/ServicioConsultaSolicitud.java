@@ -1,5 +1,7 @@
 package com.workflow.financiero.aplicacion.servicio;
 
+import com.workflow.financiero.aplicacion.puerto.PuertoProceso;
+import com.workflow.financiero.aplicacion.puerto.TareaMotor;
 import com.workflow.financiero.dominio.estado.EstadoRevision;
 import com.workflow.financiero.dominio.excepcion.SolicitudNoEncontradaException;
 import com.workflow.financiero.dominio.modelo.RevisionSolicitud;
@@ -35,6 +37,7 @@ public class ServicioConsultaSolicitud {
     private final EventoSolicitudRepositorio eventoRepositorio;
     private final ServicioAutorizacionConsulta autorizacion;
     private final CalculadoraPlanAprobacion calculadoraPlan;
+    private final PuertoProceso puertoProceso;
 
     public SolicitudDetalle obtener(UUID id, UsuarioActual actual) {
         SolicitudFinanciera solicitud = buscarVisible(id);
@@ -98,14 +101,54 @@ public class ServicioConsultaSolicitud {
         boolean iniciado = identificadorProceso != null
             && !identificadorProceso.isBlank();
 
+        if (!iniciado) {
+            return new EstadoProceso(
+                solicitud.getId(),
+                revision.getNumero(),
+                null,
+                false,
+                false,
+                revision.getEstado(),
+                List.of(),
+                List.of()
+            );
+        }
+
+        boolean activo = puertoProceso.estaActivo(identificadorProceso);
+        boolean finalizado = puertoProceso.estaFinalizado(identificadorProceso);
+        List<String> actividades = activo
+            ? puertoProceso.actividadesActivas(identificadorProceso)
+            : List.of();
+        List<TareaProceso> tareas = activo
+            ? puertoProceso.tareasActivas(identificadorProceso).stream()
+                .map(this::tarea)
+                .toList()
+            : List.of();
+
         return new EstadoProceso(
             solicitud.getId(),
             revision.getNumero(),
             identificadorProceso,
-            iniciado,
-            false,
+            true,
+            finalizado,
             revision.getEstado(),
-            List.of()
+            actividades,
+            tareas
+        );
+    }
+
+    private TareaProceso tarea(TareaMotor tarea) {
+        String rol = tarea.gruposCandidatos().isEmpty()
+            ? null
+            : tarea.gruposCandidatos().getFirst();
+        return new TareaProceso(
+            tarea.id(),
+            tarea.definicion(),
+            tarea.nombre(),
+            "PENDIENTE",
+            tarea.asignadoA(),
+            rol,
+            null
         );
     }
 

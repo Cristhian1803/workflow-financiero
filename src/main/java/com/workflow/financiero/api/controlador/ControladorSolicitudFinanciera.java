@@ -47,8 +47,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * API de solicitudes. La creación deja la revisión en EVALUANDO_RIESGO y no
- * inicia el proceso BPMN.
+ * API de solicitudes. La creación inicia el proceso BPMN y deja la revisión en
+ * APROBADA o PENDIENTE_APROBACION según el plan calculado.
  */
 @RestController
 @RequestMapping("/api/v1/solicitudes")
@@ -63,8 +63,9 @@ public class ControladorSolicitudFinanciera {
     @PostMapping
     @Operation(
         summary = "Crear una solicitud",
-        description = "Valida, clasifica el riesgo y calcula el plan. "
-            + "La revisión queda en EVALUANDO_RIESGO y no se inicia el proceso."
+        description = "Valida, clasifica el riesgo, calcula el plan e inicia el "
+            + "proceso. La revisión queda en APROBADA si no requiere "
+            + "aprobaciones o en PENDIENTE_APROBACION si las requiere."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "201", description = "Solicitud creada"),
@@ -192,8 +193,8 @@ public class ControladorSolicitudFinanciera {
 
     @GetMapping("/{id}/proceso")
     @Operation(summary = "Consultar el estado del proceso",
-        description = "En esta etapa el proceso no se inicia: iniciado es false "
-            + "y la lista de tareas está vacía.")
+        description = "Consulta la instancia activa o finalizada del motor. "
+            + "Incluye las actividades y tareas activas visibles.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Estado del proceso"),
         @ApiResponse(responseCode = "401", description = "No autenticado",
@@ -289,6 +290,7 @@ public class ControladorSolicitudFinanciera {
             proceso.iniciado(),
             proceso.finalizado(),
             proceso.estadoRevision(),
+            proceso.actividadesActivas(),
             tareas
         );
     }
@@ -296,9 +298,11 @@ public class ControladorSolicitudFinanciera {
     private TareaProcesoRespuesta tarea(TareaProceso tarea) {
         return new TareaProcesoRespuesta(
             tarea.id(),
+            tarea.rol(),
             tarea.nombre(),
             tarea.estado(),
-            tarea.asignadoA()
+            tarea.asignadoA(),
+            tarea.fechaVencimiento()
         );
     }
 }

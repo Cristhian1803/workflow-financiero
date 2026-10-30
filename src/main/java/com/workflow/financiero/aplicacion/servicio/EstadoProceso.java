@@ -5,8 +5,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Estado del proceso asociado a la revisión actual. En el Paso 2 todavía no
- * existe una instancia de Flowable.
+ * Estado del proceso asociado a la revisión actual. Se consulta al motor y se
+ * mantiene desacoplado de sus clases concretas.
  */
 public record EstadoProceso(
     UUID idSolicitud,
@@ -15,10 +15,12 @@ public record EstadoProceso(
     boolean iniciado,
     boolean finalizado,
     EstadoRevision estadoRevision,
+    List<String> actividadesActivas,
     List<TareaProceso> tareas
 ) {
 
     public EstadoProceso {
+        actividadesActivas = List.copyOf(actividadesActivas);
         tareas = List.copyOf(tareas);
     }
 }

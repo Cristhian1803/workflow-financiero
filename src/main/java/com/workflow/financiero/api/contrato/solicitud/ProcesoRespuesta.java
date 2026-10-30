@@ -6,8 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Estado del proceso asociado a la solicitud. En el Paso 2 todavía no hay
- * instancia de Flowable.
+ * Estado del proceso asociado a la revisión actual.
  */
 @Schema(description = "Estado del proceso de la revisión actual")
 public record ProcesoRespuesta(
@@ -21,20 +20,25 @@ public record ProcesoRespuesta(
         nullable = true)
     String identificadorProceso,
 
-    @Schema(example = "false")
+    @Schema(example = "true")
     boolean iniciado,
 
     @Schema(example = "false")
     boolean finalizado,
 
-    @Schema(example = "EVALUANDO_RIESGO")
+    @Schema(example = "PENDIENTE_APROBACION")
     EstadoRevision estadoRevision,
 
-    @Schema(description = "Tareas del proceso; vacío en esta etapa")
+    @Schema(description = "Actividades activas informadas por el motor",
+        example = "[\"tareaSupervisor\"]")
+    List<String> actividadesActivas,
+
+    @Schema(description = "Tareas activas del proceso")
     List<TareaProcesoRespuesta> tareas
 ) {
 
     public ProcesoRespuesta {
+        actividadesActivas = List.copyOf(actividadesActivas);
         tareas = List.copyOf(tareas);
     }
 }

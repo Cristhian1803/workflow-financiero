@@ -294,12 +294,23 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             "idx_notificacion_usuario",
             "idx_notificacion_rol",
             "idx_notificacion_estado",
-            "idx_idempotencia_expira"
+            "idx_idempotencia_expira",
+            "uq_revision_proceso"
         );
 
         indices.forEach(indice -> assertThat(contarIndice(indice))
             .as("índice %s", indice)
             .isEqualTo(1L));
+    }
+
+    @Test
+    @DisplayName("El índice de proceso por revisión es único y parcial")
+    void indiceUnicoParcialDeProcesoEstaDefinido() {
+        String indice = definicionIndice("uq_revision_proceso");
+        assertThat(indice).containsIgnoringCase("CREATE UNIQUE INDEX");
+        assertThat(indice).contains("revisoli_identificador_proceso");
+        assertThat(indice).containsIgnoringCase("WHERE");
+        assertThat(indice).containsIgnoringCase("IS NOT NULL");
     }
 
     @Test

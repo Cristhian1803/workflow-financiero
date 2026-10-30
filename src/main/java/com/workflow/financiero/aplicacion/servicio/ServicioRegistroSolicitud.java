@@ -21,8 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Crea la solicitud y su primera revisión, aplica validación, riesgo y plan y
- * deja la revisión en EVALUANDO_RIESGO. No inicia Flowable ni abre tareas.
+ * Crea la solicitud y su primera revisión, aplica validación, riesgo y plan e
+ * inicia el proceso de aprobación en la misma transacción.
  */
 @Service
 @RequiredArgsConstructor
@@ -38,6 +38,7 @@ public class ServicioRegistroSolicitud {
     private final ServicioTransicionRevision servicioTransicion;
     private final ServicioClasificacionRiesgo servicioClasificacion;
     private final CalculadoraPlanAprobacion calculadoraPlan;
+    private final ServicioInicioProceso servicioInicioProceso;
 
     @Transactional
     public SolicitudDetalle registrar(
@@ -141,6 +142,12 @@ public class ServicioRegistroSolicitud {
                 "Evaluación externa pendiente por monto superior a 200000000"
             );
         }
+
+        servicioInicioProceso.iniciar(
+            solicitud.getId(),
+            evaluando.getId(),
+            correlacion
+        );
 
         return new SolicitudDetalle(
             solicitud.getId(),
