@@ -75,6 +75,7 @@ gráfica y que los diagramas existan y no estén vacíos.
 
 ## Alcance
 
-En esta etapa el proceso está desplegado y probado, pero la API todavía no lo inicia. El
-inicio desde la creación de la solicitud, la persistencia del identificador de instancia y
-los delegates reales se incorporan próximamente.
+La API inicia el proceso al crear la solicitud y persiste el identificador de instancia en la
+revisión. El camino sin aprobaciones termina en `APROBADA`; los caminos con aprobaciones
+quedan en `PENDIENTE_APROBACION` esperando las tareas humanas. La sincronización de tareas de
+negocio, la bandeja y las decisiones HTTP se incorporan en las etapas siguientes.

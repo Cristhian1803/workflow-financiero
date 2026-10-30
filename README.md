@@ -144,7 +144,7 @@ http://localhost:8080/swagger-ui.html
 
 ## API de solicitudes
 
-La creación requiere el rol `SOLICITANTE` y termina en `EVALUANDO_RIESGO`. No inicia el proceso BPMN ni abre tareas.
+La creación requiere el rol `SOLICITANTE` e inicia el proceso BPMN. Si el plan no requiere aprobaciones, la revisión queda en `APROBADA`; si las requiere, queda en `PENDIENTE_APROBACION` y el motor abre las tareas humanas correspondientes.
 
 | Método | Ruta | Autorización |
 |---|---|---|
@@ -169,7 +169,7 @@ $creacion
 
 La respuesta `201` incluye `id`, `idRevision`, `revision`, `solicitante`, tipo, monto, moneda, descripción, justificación, `estado`, `nivelRiesgo`, `aprobacionesRequeridas`, `requiereEvaluacionExterna`, `fechaCreacion` y `fechaActualizacion`.
 
-Para 25 millones el riesgo es `BAJO` y el plan es `SUPERVISOR`. Para 100 millones el riesgo es `MEDIO` y el plan es `GERENTE` y `SUPERVISOR`. Para 250 millones el riesgo es `ALTO`, el plan incluye `GERENTE`, `RIESGOS` y `SUPERVISOR`, y `requiereEvaluacionExterna` es `true`.
+Para 5 millones el plan está vacío y la revisión termina en `APROBADA`. Para 25 millones el riesgo es `BAJO`, el plan es `SUPERVISOR` y la revisión queda en `PENDIENTE_APROBACION`. Para 100 millones el riesgo es `MEDIO` y el plan es `GERENTE` y `SUPERVISOR`. Para 250 millones el riesgo es `ALTO`, el plan incluye `GERENTE`, `RIESGOS` y `SUPERVISOR`, y `requiereEvaluacionExterna` es `true`.
 
 ### Consultar detalle
 
@@ -183,7 +183,7 @@ Invoke-RestMethod `
 
 ```powershell
 Invoke-RestMethod `
-  -Uri "http://localhost:8080/api/v1/solicitudes?pagina=0&tamano=20&estado=EVALUANDO_RIESGO" `
+  -Uri "http://localhost:8080/api/v1/solicitudes?pagina=0&tamano=20&estado=PENDIENTE_APROBACION" `
   -Headers @{ Authorization = "Bearer $($respuesta.token)" }
 ```
 
@@ -207,7 +207,7 @@ Invoke-RestMethod `
   -Headers @{ Authorization = "Bearer $($respuesta.token)" }
 ```
 
-En esta etapa responde `iniciado = false`, `identificadorProceso = null` y `tareas = []`.
+La respuesta incluye `identificadorProceso`, `iniciado`, `finalizado`, `estadoRevision`, `actividadesActivas` y `tareas`. Para una instancia activa muestra las tareas humanas del motor; para una finalizada consulta el historial y devuelve las listas vacías.
 
 Una solicitud ajena no visible responde `404`; un usuario sin el rol necesario responde `403`.
 
@@ -229,7 +229,8 @@ No es la API final de solicitudes.
 - Los roles del token no cambian hasta que vence; `/autenticacion/yo` muestra los roles actuales de la base.
 - El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
 - La API de solicitudes no aprueba, rechaza, cancela, reenvía ni ejecuta operaciones.
-- La creación no inicia Flowable ni abre tareas aun.
+- Las tareas de Flowable todavía no se sincronizan con `tarea_aprobacion`; la bandeja y los endpoints de decisión son posteriores.
+- Los temporizadores de 24/48 horas están modelados, pero la notificación y la reasignación reales todavía no se implementan.
 - El detalle recalcula el plan de aprobación con las políticas vigentes, porque el plan no se persiste.
 - El auditor puede consultar el historial, pero no el detalle ni el proceso de una solicitud ajena.
 - La API `/api/v1/solicitudes-prueba` es la demostración de prueba y no debe usarse para operaciones reales.
