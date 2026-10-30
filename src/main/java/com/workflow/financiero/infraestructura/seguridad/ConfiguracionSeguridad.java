@@ -75,6 +75,10 @@ public class ConfiguracionSeguridad {
 
                 autorizacion.requestMatchers("/actuator/info")
                     .hasRole("ADMINISTRADOR");
+                autorizacion.requestMatchers(
+                    HttpMethod.POST,
+                    "/api/v1/solicitudes"
+                ).hasRole("SOLICITANTE");
                 autorizacion.anyRequest().authenticated();
             })
             .oauth2ResourceServer(oauth2 -> oauth2

@@ -1,8 +1,10 @@
 package com.workflow.financiero.api.error;
 
 import com.workflow.financiero.aplicacion.excepcion.CredencialesInvalidasException;
+import com.workflow.financiero.dominio.excepcion.AccesoDenegadoException;
 import com.workflow.financiero.dominio.excepcion.SolicitudInvalidaException;
 import com.workflow.financiero.dominio.excepcion.SolicitudPruebaInvalidaException;
+import com.workflow.financiero.dominio.excepcion.TransicionEstadoInvalidaException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.Comparator;
 import java.util.List;
@@ -14,10 +16,12 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
@@ -107,6 +111,26 @@ public class ManejadorErroresApi {
         );
     }
 
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ProblemDetail> parametroInvalido(
+        MethodArgumentTypeMismatchException excepcion,
+        HttpServletRequest peticion
+    ) {
+        String campo = excepcion.getPropertyName() == null
+            ? "parametro"
+            : excepcion.getPropertyName();
+        ProblemDetail problema = ProblemaApi.crear(
+            CodigoError.DATOS_INVALIDOS,
+            "La petición contiene datos inválidos",
+            peticion
+        );
+        ProblemaApi.conErrores(
+            problema,
+            List.of(new ErrorCampoRespuesta(campo, "Valor inválido"))
+        );
+        return respuesta(problema, CodigoError.DATOS_INVALIDOS.getEstado());
+    }
+
     @ExceptionHandler({NoSuchElementException.class, NoResourceFoundException.class})
     ResponseEntity<ProblemDetail> recursoNoEncontrado(
         Exception excepcion,
@@ -119,9 +143,13 @@ public class ManejadorErroresApi {
         );
     }
 
-    @ExceptionHandler(DataIntegrityViolationException.class)
+    @ExceptionHandler({
+        DataIntegrityViolationException.class,
+        TransicionEstadoInvalidaException.class,
+        ObjectOptimisticLockingFailureException.class
+    })
     ResponseEntity<ProblemDetail> conflictoDeDatos(
-        DataIntegrityViolationException excepcion,
+        Exception excepcion,
         HttpServletRequest peticion
     ) {
         return respuesta(
@@ -131,9 +159,9 @@ public class ManejadorErroresApi {
         );
     }
 
-    @ExceptionHandler(AccessDeniedException.class)
+    @ExceptionHandler({AccessDeniedException.class, AccesoDenegadoException.class})
     ResponseEntity<ProblemDetail> accesoDenegado(
-        AccessDeniedException excepcion,
+        RuntimeException excepcion,
         HttpServletRequest peticion
     ) {
         return respuesta(
