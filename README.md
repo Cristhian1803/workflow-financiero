@@ -160,6 +160,8 @@ La creación requiere el rol `SOLICITANTE` e inicia el proceso BPMN. Si el plan 
 | `GET` | `/api/v1/solicitudes/{id}/historial` | Dueño, auditor o administrador |
 | `GET` | `/api/v1/solicitudes/{id}/proceso` | Dueño, aprobador relacionado o administrador |
 | `GET` | `/api/v1/tareas-aprobacion` | Aprobador o delegado |
+| `POST` | `/api/v1/tareas-aprobacion/{id}/aprobar` | Actor elegible |
+| `POST` | `/api/v1/tareas-aprobacion/{id}/rechazar` | Actor elegible |
 
 ### Crear
 
@@ -247,6 +249,51 @@ flujo:
       RIESGOS: JEFE_RIESGOS
 ```
 
+### Aprobar y rechazar
+
+```powershell
+$loginSupervisor = Invoke-RestMethod `
+  -Method Post `
+  -Uri http://localhost:8080/api/v1/autenticacion/iniciar-sesion `
+  -ContentType "application/json" `
+  -Body '{"usuario":"supervisor","clave":"demo"}'
+
+$tarea = (Invoke-RestMethod `
+  -Uri http://localhost:8080/api/v1/tareas-aprobacion `
+  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" })[0]
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://localhost:8080/api/v1/tareas-aprobacion/$($tarea.id)/aprobar" `
+  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" } `
+  -ContentType "application/json" `
+  -Body '{"comentario":"Aprobado para continuar"}'
+```
+
+Para rechazar se usa `/rechazar` con `motivo` obligatorio:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://localhost:8080/api/v1/tareas-aprobacion/$($tarea.id)/rechazar" `
+  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" } `
+  -ContentType "application/json" `
+  -Body '{"motivo":"El monto no coincide con la documentación"}'
+```
+
+Ambas respuestas incluyen `idTarea`, `decision`, `fecha`, `estadoTarea`, `estadoRevision` y `delegado`. El id es el de la tarea de negocio, no el de Flowable.
+
+Reglas aplicadas:
+
+- El creador no puede aprobar su propia solicitud.
+- Un actor no puede aprobar dos roles funcionales distintos en la misma solicitud.
+- El mismo rol se puede repetir en otra revisión.
+- Si la tarea tiene asignado, solo el asignado puede resolverla y debe tener el rol funcional o la delegación.
+- El rol registrado es el rol funcional de la tarea, aunque actúe un superior por delegación.
+- Un rechazo cancela las demás tareas pendientes de la revisión y termina el proceso sin preparar ejecución.
+
+Errores principales: `400 DATOS_INVALIDOS`, `401 NO_AUTENTICADO`, `403 APROBACION_NO_PERMITIDA`, `403 SEGREGACION_FUNCIONES`, `404 TAREA_NO_ENCONTRADA`, `409 TAREA_YA_RESUELTA` y `409 TRANSICION_TAREA_INVALIDA`.
+
 ## API de demostración
 
 Requiere `Authorization: Bearer <token>`:
@@ -264,10 +311,10 @@ No es la API final de solicitudes.
 - Un token sigue válido hasta su vencimiento; el usuario se revalida como activo en cada consulta, pero los roles del token no cambian hasta que vence.
 - Los roles del token no cambian hasta que vence; `/autenticacion/yo` muestra los roles actuales de la base.
 - El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
-- La API de solicitudes no aprueba, rechaza, cancela, reenvía ni ejecuta operaciones.
-- La bandeja muestra tareas pendientes, pero aprobar y rechazar por HTTP son de la siguiente iteración.
+- La API no cancela solicitudes, no reenvía y no ejecuta operaciones financieras reales.
+- Las rutas combinadas, el paralelismo completo y la espera de riesgo externo quedan para I-13 y el Paso 4.
 - Los temporizadores de 24/48 horas están modelados, pero la notificación y la reasignación reales todavía no se implementan.
-- El creador de una solicitud no ve sus propias tareas como accionables.
+- El creador no puede aprobar sus propias tareas.
 - El detalle recalcula el plan de aprobación con las políticas vigentes, porque el plan no se persiste.
 - El auditor puede consultar el historial, pero no el detalle ni el proceso de una solicitud ajena.
 - La API `/api/v1/solicitudes-prueba` es la demostración de prueba y no debe usarse para operaciones reales.

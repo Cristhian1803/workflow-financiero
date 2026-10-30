@@ -79,4 +79,8 @@ La API inicia el proceso al crear la solicitud, persiste el identificador de ins
 revisión y sincroniza cada tarea humana con `tarea_aprobacion`. El camino sin aprobaciones
 termina en `APROBADA`; los caminos con aprobaciones quedan en `PENDIENTE_APROBACION` y la
 bandeja `GET /api/v1/tareas-aprobacion` muestra las tareas visibles para cada aprobador o
-delegado. Las decisiones HTTP de aprobar y rechazar se incorporan en la etapa siguiente.
+delegado. Los endpoints `POST /api/v1/tareas-aprobacion/{id}/aprobar` y `/rechazar` registran
+la decisión y avanzan el motor en la misma transacción. Un rechazo cancela las demás tareas
+de negocio de la revisión y usa el fin de terminación del proceso para cerrar las ramas
+restantes. El paralelismo completo y la espera de riesgo externo se prueban en la etapa
+siguiente.
