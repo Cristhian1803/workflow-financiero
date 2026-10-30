@@ -2,15 +2,42 @@ package com.workflow.financiero.infraestructura.persistencia;
 
 import com.workflow.financiero.dominio.estado.EstadoTareaAprobacion;
 import com.workflow.financiero.dominio.modelo.TareaAprobacion;
+import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface TareaAprobacionRepositorio extends JpaRepository<TareaAprobacion, UUID> {
+
+    @Query("""
+        select t.revision.solicitud.id
+        from TareaAprobacion t
+        where t.id = :tareaId
+        """)
+    Optional<UUID> buscarSolicitudIdPorTarea(@Param("tareaId") UUID tareaId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from TareaAprobacion t where t.id = :tareaId")
+    Optional<TareaAprobacion> buscarPorIdParaActualizar(@Param("tareaId") UUID tareaId);
+
+    @Query("""
+        select t
+        from TareaAprobacion t
+        join fetch t.revision r
+        join fetch r.solicitud s
+        join fetch s.solicitante
+        join fetch r.tipoOperacion
+        join fetch r.moneda
+        join fetch t.rol
+        left join fetch t.asignado
+        where t.id = :tareaId
+        """)
+    Optional<TareaAprobacion> buscarDetallePorId(@Param("tareaId") UUID tareaId);
 
     @Query("""
         select t
