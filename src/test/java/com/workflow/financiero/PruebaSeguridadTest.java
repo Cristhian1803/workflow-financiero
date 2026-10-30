@@ -51,8 +51,10 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
 
     private static final String RUTA_LOGIN = "/api/v1/autenticacion/iniciar-sesion";
     private static final String RUTA_YO = "/api/v1/autenticacion/yo";
+    private static final String RUTA_TAREAS = "/api/v1/tareas-aprobacion";
     private static final String USUARIOS_DEMO =
-        "'demo', 'demo2', 'auditor', 'admin'";
+        "'demo', 'demo2', 'auditor', 'admin', 'supervisor', 'gerente', "
+            + "'riesgos', 'gerente_general', 'jefe_riesgos', 'operaciones'";
 
     @Autowired
     MockMvc mockMvc;
@@ -349,8 +351,8 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
         Long despues = contarUsuariosDemo();
         String hashDespues = hashDemo();
 
-        assertThat(antes).isEqualTo(4L);
-        assertThat(despues).isEqualTo(4L);
+        assertThat(antes).isEqualTo(10L);
+        assertThat(despues).isEqualTo(10L);
         assertThat(hashDespues).isEqualTo(hashAntes);
         assertThat(hashDespues).startsWith("$2");
     }
