@@ -29,6 +29,8 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class IntentoEjecucion {
 
+    private static final int LONGITUD_ERROR = 1000;
+
     @Id
     @Column(name = "inteejec_id", nullable = false)
     private UUID id;
@@ -105,14 +107,50 @@ public class IntentoEjecucion {
             throw new IllegalStateException(
                 "La intención no está pendiente: " + estado);
         }
-        if (trabajador == null || trabajador.isBlank()) {
-            throw new IllegalArgumentException(
-                "El trabajador que reclama es obligatorio");
-        }
+        exigirTrabajador(trabajador);
         this.estado = EstadoIntentoEjecucion.ENVIANDO;
         this.intentos++;
         this.reclamadoEn = Instantes.ahora();
         this.reclamadoPor = trabajador;
+        this.actualizadoEn = this.reclamadoEn;
+    }
+
+    /**
+     * Reclama una intención que quedó en envío o cuyo resultado es incierto.
+     * El incremento de intentos permite limitar los reintentos automáticos.
+     */
+    public void reclamarRecuperacion(String trabajador) {
+        if (estado != EstadoIntentoEjecucion.ENVIANDO
+            && estado != EstadoIntentoEjecucion.RESULTADO_DESCONOCIDO) {
+            throw new IllegalStateException(
+                "La intención no es recuperable: " + estado);
+        }
+        exigirTrabajador(trabajador);
+        this.estado = EstadoIntentoEjecucion.ENVIANDO;
+        this.intentos++;
+        this.reclamadoEn = Instantes.ahora();
+        this.reclamadoPor = trabajador;
+        this.proximoIntentoEn = null;
+        this.actualizadoEn = this.reclamadoEn;
+    }
+
+    /**
+     * Habilita un reintento manual autorizado desde un incidente. No cambia
+     * la clave ni la huella de la intención.
+     */
+    public void reintentarManual(String trabajador) {
+        if (estado != EstadoIntentoEjecucion.FALLIDA
+            && estado != EstadoIntentoEjecucion.RESULTADO_DESCONOCIDO
+            && estado != EstadoIntentoEjecucion.ENVIANDO) {
+            throw new IllegalStateException(
+                "La intención no admite reintento manual: " + estado);
+        }
+        exigirTrabajador(trabajador);
+        this.estado = EstadoIntentoEjecucion.ENVIANDO;
+        this.intentos++;
+        this.reclamadoEn = Instantes.ahora();
+        this.reclamadoPor = trabajador;
+        this.proximoIntentoEn = null;
         this.actualizadoEn = this.reclamadoEn;
     }
 
@@ -121,7 +159,8 @@ public class IntentoEjecucion {
         String confirmacionReferencia,
         String referenciaExterna
     ) {
-        if (estado != EstadoIntentoEjecucion.ENVIANDO) {
+        if (estado != EstadoIntentoEjecucion.ENVIANDO
+            && estado != EstadoIntentoEjecucion.RESULTADO_DESCONOCIDO) {
             throw new IllegalStateException(
                 "La intención no está en envío: " + estado);
         }
@@ -129,6 +168,67 @@ public class IntentoEjecucion {
         this.reservaReferencia = reservaReferencia;
         this.confirmacionReferencia = confirmacionReferencia;
         this.referenciaExterna = referenciaExterna;
+        this.ultimoError = null;
+        this.proximoIntentoEn = null;
         this.actualizadoEn = Instantes.ahora();
+    }
+
+    public void marcarResultadoDesconocido(String error) {
+        if (estado == EstadoIntentoEjecucion.CONFIRMADA) {
+            return;
+        }
+        if (estado != EstadoIntentoEjecucion.ENVIANDO
+            && estado != EstadoIntentoEjecucion.RESULTADO_DESCONOCIDO) {
+            throw new IllegalStateException(
+                "La intención no puede quedar desconocida: " + estado);
+        }
+        this.estado = EstadoIntentoEjecucion.RESULTADO_DESCONOCIDO;
+        this.ultimoError = limitar(error);
+        this.actualizadoEn = Instantes.ahora();
+    }
+
+    public void marcarFallida(String error) {
+        if (estado == EstadoIntentoEjecucion.CONFIRMADA) {
+            return;
+        }
+        this.estado = EstadoIntentoEjecucion.FALLIDA;
+        this.ultimoError = limitar(error);
+        this.proximoIntentoEn = null;
+        this.actualizadoEn = Instantes.ahora();
+    }
+
+    public void programarReintento(Instant proximoIntento, String error) {
+        if (estado == EstadoIntentoEjecucion.CONFIRMADA) {
+            return;
+        }
+        this.estado = EstadoIntentoEjecucion.RESULTADO_DESCONOCIDO;
+        this.proximoIntentoEn = proximoIntento;
+        this.ultimoError = limitar(error);
+        this.actualizadoEn = Instantes.ahora();
+    }
+
+    public void detenerReintentoAutomatico(String error) {
+        if (estado == EstadoIntentoEjecucion.CONFIRMADA) {
+            return;
+        }
+        this.proximoIntentoEn = null;
+        this.ultimoError = limitar(error);
+        this.actualizadoEn = Instantes.ahora();
+    }
+
+    private void exigirTrabajador(String trabajador) {
+        if (trabajador == null || trabajador.isBlank()) {
+            throw new IllegalArgumentException(
+                "El trabajador que reclama es obligatorio");
+        }
+    }
+
+    private String limitar(String texto) {
+        if (texto == null) {
+            return null;
+        }
+        return texto.length() <= LONGITUD_ERROR
+            ? texto
+            : texto.substring(0, LONGITUD_ERROR);
     }
 }

@@ -45,6 +45,9 @@ ejecucion:
   trabajador:
     habilitado: ${EJECUCION_TRABAJADOR_HABILITADO:false}
     intervalo-ms: ${EJECUCION_TRABAJADOR_INTERVALO_MS:2000}
+    max-intentos: ${EJECUCION_TRABAJADOR_MAX_INTENTOS:3}
+    reclamacion-vencida: ${EJECUCION_TRABAJADOR_RECLAMACION_VENCIDA:PT30S}
+    reintento-espera: ${EJECUCION_TRABAJADOR_REINTENTO_ESPERA:PT5S}
 
 seguridad:
   jwt:
