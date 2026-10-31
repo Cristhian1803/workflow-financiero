@@ -395,6 +395,47 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
             UUID.fromString(revisionId));
     }
 
+    long contarEventosTipoDeRevision(String revisionId, String tipo) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM evento_solicitud "
+                + "WHERE evensoli_revisoli_id = ? AND evensoli_tipo = ?",
+            Long.class,
+            UUID.fromString(revisionId),
+            tipo);
+    }
+
+    long contarNotificacionesDeRevisionTotal(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM notificacion n "
+                + "JOIN tarea_aprobacion t "
+                + "ON t.tareapro_id = n.noti_tareapro_id "
+                + "WHERE t.tareapro_revisoli_id = ?",
+            Long.class,
+            UUID.fromString(revisionId));
+    }
+
+    long contarNotificacionesTipoDeRevision(String revisionId, String tipo) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM notificacion n "
+                + "JOIN tarea_aprobacion t "
+                + "ON t.tareapro_id = n.noti_tareapro_id "
+                + "WHERE t.tareapro_revisoli_id = ? AND n.noti_tipo = ?",
+            Long.class,
+            UUID.fromString(revisionId),
+            tipo);
+    }
+
+    long contarRegistrosActorRol(String solicitudId, String usuario) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM registro_actor_rol "
+                + "WHERE regiactorol_solifina_id = ? "
+                + "AND regiactorol_usua_id = "
+                + "(SELECT usua_id FROM usuario WHERE usua_usuario = ?)",
+            Long.class,
+            UUID.fromString(solicitudId),
+            usuario);
+    }
+
     long contarRevisiones(String solicitudId) {
         return jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM revision_solicitud "
