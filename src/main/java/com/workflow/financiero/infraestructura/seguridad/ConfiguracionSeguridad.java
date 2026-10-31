@@ -79,6 +79,11 @@ public class ConfiguracionSeguridad {
                         "/swagger-ui/**",
                         "/swagger-ui.html"
                     ).permitAll();
+                    // El simulador valida su propia clave de integración; sus
+                    // rutas no existen fuera de desarrollo y pruebas.
+                    autorizacion.requestMatchers(
+                        "/api/v1/integraciones/proveedor-financiero/**"
+                    ).permitAll();
                 }
 
                 autorizacion.requestMatchers("/actuator/info")

@@ -1,5 +1,6 @@
 package com.workflow.financiero.api.error;
 
+import com.workflow.financiero.aplicacion.excepcion.ConflictoProveedorFinancieroException;
 import com.workflow.financiero.aplicacion.excepcion.CredencialesInvalidasException;
 import com.workflow.financiero.dominio.excepcion.AccesoDenegadoException;
 import com.workflow.financiero.dominio.excepcion.AprobacionNoPermitidaException;
@@ -221,6 +222,18 @@ public class ManejadorErroresApi {
     ) {
         return respuesta(
             CodigoError.REENVIO_NO_PERMITIDO,
+            excepcion.getMessage(),
+            peticion
+        );
+    }
+
+    @ExceptionHandler(ConflictoProveedorFinancieroException.class)
+    ResponseEntity<ProblemDetail> conflictoProveedorFinanciero(
+        ConflictoProveedorFinancieroException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.CONFLICTO_DATOS,
             excepcion.getMessage(),
             peticion
         );
