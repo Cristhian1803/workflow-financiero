@@ -49,18 +49,29 @@ import org.springframework.transaction.support.TransactionTemplate;
 class PruebaEstadosTest extends PruebaIntegracionBase {
 
     private static final Map<EstadoRevision, Set<EstadoRevision>> TRANSICIONES = Map.of(
-        EstadoRevision.RECIBIDA, Set.of(EstadoRevision.VALIDANDO),
-        EstadoRevision.VALIDANDO, Set.of(EstadoRevision.EVALUANDO_RIESGO),
+        EstadoRevision.RECIBIDA, Set.of(
+            EstadoRevision.VALIDANDO,
+            EstadoRevision.CANCELADA
+        ),
+        EstadoRevision.VALIDANDO, Set.of(
+            EstadoRevision.EVALUANDO_RIESGO,
+            EstadoRevision.CANCELADA
+        ),
         EstadoRevision.EVALUANDO_RIESGO, Set.of(
             EstadoRevision.PENDIENTE_APROBACION,
             EstadoRevision.APROBADA,
-            EstadoRevision.REVISION_MANUAL
+            EstadoRevision.REVISION_MANUAL,
+            EstadoRevision.CANCELADA
         ),
         EstadoRevision.PENDIENTE_APROBACION, Set.of(
             EstadoRevision.APROBADA,
-            EstadoRevision.RECHAZADA
+            EstadoRevision.RECHAZADA,
+            EstadoRevision.CANCELADA
         ),
-        EstadoRevision.APROBADA, Set.of(EstadoRevision.EJECUTANDO),
+        EstadoRevision.APROBADA, Set.of(
+            EstadoRevision.EJECUTANDO,
+            EstadoRevision.CANCELADA
+        ),
         EstadoRevision.EJECUTANDO, Set.of(
             EstadoRevision.EJECUTADA,
             EstadoRevision.RESULTADO_DESCONOCIDO,
@@ -124,7 +135,7 @@ class PruebaEstadosTest extends PruebaIntegracionBase {
     @DisplayName("La máquina de estados define exactamente las transiciones permitidas")
     void laMaquinaDeEstadosDefineLasTransicionesPermitidas() {
         assertThat(TRANSICIONES.values().stream().mapToInt(Set::size).sum())
-            .isEqualTo(18);
+            .isEqualTo(23);
 
         TRANSICIONES.forEach((origen, destinos) -> destinos.forEach(destino ->
             assertThat(origen.puedeTransicionarA(destino))

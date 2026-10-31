@@ -23,13 +23,16 @@ public enum EstadoRevision {
         }
 
         return switch (this) {
-            case RECIBIDA -> destino == VALIDANDO;
-            case VALIDANDO -> destino == EVALUANDO_RIESGO;
+            case RECIBIDA -> destino == VALIDANDO || destino == CANCELADA;
+            case VALIDANDO -> destino == EVALUANDO_RIESGO || destino == CANCELADA;
             case EVALUANDO_RIESGO -> destino == PENDIENTE_APROBACION
                 || destino == APROBADA
-                || destino == REVISION_MANUAL;
-            case PENDIENTE_APROBACION -> destino == APROBADA || destino == RECHAZADA;
-            case APROBADA -> destino == EJECUTANDO;
+                || destino == REVISION_MANUAL
+                || destino == CANCELADA;
+            case PENDIENTE_APROBACION -> destino == APROBADA
+                || destino == RECHAZADA
+                || destino == CANCELADA;
+            case APROBADA -> destino == EJECUTANDO || destino == CANCELADA;
             case EJECUTANDO -> destino == EJECUTADA
                 || destino == RESULTADO_DESCONOCIDO
                 || destino == COMPENSANDO
