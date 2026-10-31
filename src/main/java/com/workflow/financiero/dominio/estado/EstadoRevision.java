@@ -31,8 +31,11 @@ public enum EstadoRevision {
                 || destino == CANCELADA;
             case PENDIENTE_APROBACION -> destino == APROBADA
                 || destino == RECHAZADA
-                || destino == CANCELADA;
-            case APROBADA -> destino == EJECUTANDO || destino == CANCELADA;
+                || destino == CANCELADA
+                || destino == COMPENSANDO;
+            case APROBADA -> destino == EJECUTANDO
+                || destino == CANCELADA
+                || destino == COMPENSANDO;
             case EJECUTANDO -> destino == EJECUTADA
                 || destino == RESULTADO_DESCONOCIDO
                 || destino == COMPENSANDO

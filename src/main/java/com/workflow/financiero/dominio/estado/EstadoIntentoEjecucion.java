@@ -10,5 +10,6 @@ public enum EstadoIntentoEjecucion {
     RESULTADO_DESCONOCIDO,
     FALLIDA,
     COMPENSANDO,
-    COMPENSADA
+    COMPENSADA,
+    CANCELADA
 }

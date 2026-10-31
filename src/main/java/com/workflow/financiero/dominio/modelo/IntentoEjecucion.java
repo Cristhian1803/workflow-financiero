@@ -9,6 +9,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
@@ -72,6 +73,19 @@ public class IntentoEjecucion {
 
     @Column(name = "inteejec_confirmacion_referencia", length = 100)
     private String confirmacionReferencia;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "inteejec_cancelacion_actor_usua_id")
+    private Usuario cancelacionActor;
+
+    @Column(name = "inteejec_cancelacion_motivo", length = LONGITUD_ERROR)
+    private String cancelacionMotivo;
+
+    @Column(name = "inteejec_cancelacion_solicitada_en")
+    private Instant cancelacionSolicitadaEn;
+
+    @Column(name = "inteejec_liberacion_referencia", length = 100)
+    private String liberacionReferencia;
 
     @Version
     @Column(name = "inteejec_version", nullable = false)
@@ -212,6 +226,67 @@ public class IntentoEjecucion {
             return;
         }
         this.proximoIntentoEn = null;
+        this.ultimoError = limitar(error);
+        this.actualizadoEn = Instantes.ahora();
+    }
+
+    /**
+     * Cancela una intención que todavía no fue reclamada por el trabajador.
+     * No hubo despacho y, por lo tanto, tampoco efecto financiero.
+     */
+    public void marcarCancelada(Usuario actor, String motivo) {
+        if (estado != EstadoIntentoEjecucion.PENDIENTE) {
+            throw new IllegalStateException(
+                "La intención no está pendiente: " + estado);
+        }
+        this.estado = EstadoIntentoEjecucion.CANCELADA;
+        this.cancelacionActor = actor;
+        this.cancelacionMotivo = limitar(motivo);
+        this.cancelacionSolicitadaEn = Instantes.ahora();
+        this.actualizadoEn = this.cancelacionSolicitadaEn;
+    }
+
+    /**
+     * Inicia la compensación de una intención que falló después de reservar.
+     * La clave de liberación es estable y se deriva de la revisión.
+     */
+    public void marcarCompensando(Usuario actor, String motivo) {
+        if (estado != EstadoIntentoEjecucion.FALLIDA) {
+            throw new IllegalStateException(
+                "La intención no se puede compensar: " + estado);
+        }
+        this.estado = EstadoIntentoEjecucion.COMPENSANDO;
+        this.cancelacionActor = actor;
+        this.cancelacionMotivo = limitar(motivo);
+        this.cancelacionSolicitadaEn = Instantes.ahora();
+        this.actualizadoEn = this.cancelacionSolicitadaEn;
+    }
+
+    public void marcarCompensada(String referenciaLiberacion) {
+        if (estado != EstadoIntentoEjecucion.COMPENSANDO
+            && estado != EstadoIntentoEjecucion.CANCELADA) {
+            throw new IllegalStateException(
+                "La intención no está compensando: " + estado);
+        }
+        this.estado = EstadoIntentoEjecucion.COMPENSADA;
+        this.liberacionReferencia = referenciaLiberacion;
+        this.actualizadoEn = Instantes.ahora();
+    }
+
+    /**
+     * La compensación no encontró reserva que liberar. La intención queda
+     * cancelada sin referencia de liberación.
+     */
+    public void marcarCanceladaSinCompensacion() {
+        if (estado != EstadoIntentoEjecucion.COMPENSANDO) {
+            throw new IllegalStateException(
+                "La intención no está compensando: " + estado);
+        }
+        this.estado = EstadoIntentoEjecucion.CANCELADA;
+        this.actualizadoEn = Instantes.ahora();
+    }
+
+    public void registrarErrorCompensacion(String error) {
         this.ultimoError = limitar(error);
         this.actualizadoEn = Instantes.ahora();
     }

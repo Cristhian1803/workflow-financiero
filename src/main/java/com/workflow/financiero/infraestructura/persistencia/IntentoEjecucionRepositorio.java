@@ -18,6 +18,11 @@ public interface IntentoEjecucionRepositorio
         @Param("revisionId") UUID revisionId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from IntentoEjecucion i where i.revision.id = :revisionId")
+    Optional<IntentoEjecucion> buscarPorRevisionIdParaActualizar(
+        @Param("revisionId") UUID revisionId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from IntentoEjecucion i where i.id = :id")
     Optional<IntentoEjecucion> buscarPorIdParaActualizar(
         @Param("id") UUID id);
