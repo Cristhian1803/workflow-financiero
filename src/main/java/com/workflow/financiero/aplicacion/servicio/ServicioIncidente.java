@@ -83,6 +83,53 @@ public class ServicioIncidente {
         return incidente;
     }
 
+    @Transactional
+    public Incidente crearCompensacion(
+        SolicitudFinanciera solicitud,
+        RevisionSolicitud revision,
+        UUID referencia,
+        String motivo,
+        boolean reintentable,
+        String correlacion
+    ) {
+        Optional<Incidente> existente = incidenteRepositorio
+            .findByTipoAndReferencia(TipoIncidente.COMPENSACION, referencia);
+        if (existente.isPresent()) {
+            Incidente incidente = existente.get();
+            incidente.actualizarMotivo(motivo);
+            if (incidente.getEstado() == EstadoIncidente.RESUELTO
+                || incidente.getEstado() == EstadoIncidente.CERRADO) {
+                incidente.reabrir(motivo);
+            }
+            if (!reintentable) {
+                incidente.marcarNoReintentable(motivo);
+            }
+            return incidente;
+        }
+
+        Incidente incidente = new Incidente(
+            solicitud,
+            revision,
+            TipoIncidente.COMPENSACION,
+            referencia,
+            motivo,
+            reintentable
+        );
+        incidenteRepositorio.saveAndFlush(incidente);
+        servicioEvento.registrar(
+            solicitud,
+            revision,
+            TipoEventoSolicitud.INCIDENTE_CREADO,
+            null,
+            null,
+            revision.getEstado(),
+            revision.getEstado(),
+            correlacion,
+            "Incidente de compensación creado"
+        );
+        return incidente;
+    }
+
     @Transactional(readOnly = true)
     public List<IncidenteDetalle> listarAbiertos(UsuarioActual actual) {
         exigirOperador(actual);
@@ -184,6 +231,23 @@ public class ServicioIncidente {
     }
 
     @Transactional
+    public IncidenteDetalle resolverCompensacionPorRevision(
+        UUID revisionId,
+        UsuarioActual actual,
+        String resultado,
+        String correlacion
+    ) {
+        Optional<Incidente> encontrado = incidenteRepositorio
+            .findByRevisionIdAndTipo(
+                revisionId, TipoIncidente.COMPENSACION);
+        if (encontrado.isEmpty()) {
+            return null;
+        }
+        return resolver(
+            encontrado.get().getId(), actual, resultado, correlacion);
+    }
+
+    @Transactional
     public IncidenteDetalle registrarResultado(
         UUID id,
         String resultado,
@@ -263,9 +327,10 @@ public class ServicioIncidente {
         Incidente incidente = incidenteRepositorio.findById(id)
             .orElseThrow(() -> new IncidenteNoEncontradoException(
                 "No existe el incidente " + id));
-        if (incidente.getTipo() != TipoIncidente.EJECUCION) {
+        if (incidente.getTipo() != TipoIncidente.EJECUCION
+            && incidente.getTipo() != TipoIncidente.COMPENSACION) {
             throw new ReintentoNoPermitidoException(
-                "Solo se implementó el reintento de incidentes de ejecución");
+                "El incidente no admite reintento operativo");
         }
         if (incidente.getEstado() != EstadoIncidente.ABIERTO) {
             throw new ReintentoNoPermitidoException(
@@ -280,9 +345,10 @@ public class ServicioIncidente {
 
     private Incidente buscarParaReintentoBloqueado(UUID id) {
         Incidente incidente = buscarBloqueado(id);
-        if (incidente.getTipo() != TipoIncidente.EJECUCION) {
+        if (incidente.getTipo() != TipoIncidente.EJECUCION
+            && incidente.getTipo() != TipoIncidente.COMPENSACION) {
             throw new ReintentoNoPermitidoException(
-                "Solo se implementó el reintento de incidentes de ejecución");
+                "El incidente no admite reintento operativo");
         }
         if (incidente.getEstado() != EstadoIncidente.ABIERTO) {
             throw new ReintentoNoPermitidoException(

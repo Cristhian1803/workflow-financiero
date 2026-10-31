@@ -172,11 +172,14 @@ public class ControladorSolicitudFinanciera {
     @Operation(
         summary = "Cancelar una solicitud",
         description = "Solo el dueño o un administrador pueden cancelar. Si no "
-            + "hay reserva, la revisión queda CANCELADA. Si hay reserva y la "
-            + "confirmación no fue despachada, se libera antes de declarar "
-            + "CANCELADA. Después de una confirmación efectiva responde 409. "
-            + "Si la liberación no se puede confirmar, responde 202 y deja la "
-            + "revisión en COMPENSANDO."
+            + "hay reserva ni despacho en curso, la revisión queda CANCELADA. "
+            + "Si hay reserva y la confirmación no fue despachada, se libera "
+            + "antes de declarar CANCELADA. Una confirmación en tránsito o "
+            + "desconocida no se libera: responde 202 y queda pendiente de "
+            + "reconciliación. Después de una confirmación efectiva responde "
+            + "409. Si la liberación falla o su respuesta se pierde, se "
+            + "consulta o reintenta con la misma clave; si no hay resolución "
+            + "segura, responde 202 y abre un incidente de compensación."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Solicitud cancelada"),

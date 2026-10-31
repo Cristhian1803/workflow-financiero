@@ -46,10 +46,26 @@ public class TrabajadorEjecucion {
 
     private void procesar(TrabajoEjecucion trabajo) {
         try {
+            if (!servicioIntencion.puedeDespachar(trabajo)) {
+                servicioIntencion.abortarDespacho(
+                    trabajo,
+                    "Cancelación solicitada antes del despacho"
+                );
+                return;
+            }
+
             OperacionFinanciera reserva = operacion(
                 trabajo, AccionFinanciera.RESERVA);
             ResultadoOperacionFinanciera resultadoReserva =
                 proveedor.reservar(reserva);
+
+            if (!servicioIntencion.puedeConfirmar(trabajo)) {
+                servicioIntencion.abortarDespacho(
+                    trabajo,
+                    "Cancelación solicitada antes de confirmar"
+                );
+                return;
+            }
 
             OperacionFinanciera confirmacion = operacion(
                 trabajo, AccionFinanciera.CONFIRMACION);

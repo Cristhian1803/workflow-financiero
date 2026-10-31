@@ -72,11 +72,12 @@ public class ControladorIncidente {
 
     @PostMapping("/{id}/reintentar")
     @Operation(
-        summary = "Reintentar un incidente de ejecución",
+        summary = "Reintentar un incidente de ejecución o compensación",
         description = "Revalida la autorización, conserva la clave y la huella "
-            + "financiera y registra actor, motivo y resultado. Si el resultado "
-            + "sigue incierto responde 202; si el incidente no admite reintento, "
-            + "responde 409."
+            + "financiera y registra actor, motivo y resultado. En compensación "
+            + "consulta la confirmación y la liberación antes de repetir la "
+            + "operación. Si el resultado sigue incierto responde 202; si el "
+            + "incidente no admite reintento, responde 409."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Incidente resuelto"),

@@ -20,7 +20,10 @@ public record PreparacionCancelacion(
     UsuarioActual actual,
     EstadoRevision estado,
     boolean requiereCompensacion,
-    boolean intencionEnCompensacion
+    boolean intencionEnCompensacion,
+    UUID idCompensacion,
+    boolean despachoEnCurso,
+    int intentos
 ) {
 
     public ResultadoCancelacionSolicitud resultado() {
@@ -28,6 +31,29 @@ public record PreparacionCancelacion(
             idSolicitud,
             idRevision,
             estado
+        );
+    }
+
+    public static PreparacionCancelacion desde(
+        TrabajoCompensacion trabajo,
+        ContextoCompensacion contexto
+    ) {
+        return new PreparacionCancelacion(
+            trabajo.idSolicitud(),
+            trabajo.idRevision(),
+            trabajo.idIntentoEjecucion(),
+            trabajo.monto(),
+            trabajo.moneda(),
+            trabajo.tipoOperacion(),
+            contexto.motivo(),
+            contexto.correlacion(),
+            contexto.actual(),
+            EstadoRevision.COMPENSANDO,
+            true,
+            true,
+            trabajo.idCompensacion(),
+            trabajo.despachoEnCurso(),
+            trabajo.intentos()
         );
     }
 }

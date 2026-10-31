@@ -22,6 +22,7 @@ public class ProgramadorEjecucion {
 
     private final TrabajadorEjecucion trabajador;
     private final TrabajadorRecuperacionEjecucion recuperador;
+    private final TrabajadorCompensacion compensador;
 
     @Scheduled(
         fixedDelayString = "${ejecucion.trabajador.intervalo-ms:2000}"
@@ -29,11 +30,14 @@ public class ProgramadorEjecucion {
     public void ejecutar() {
         int procesadas = trabajador.ejecutarPendientes();
         int recuperadas = recuperador.reconciliarPendientes();
-        if (procesadas > 0 || recuperadas > 0) {
+        int compensadas = compensador.procesarPendientes();
+        if (procesadas > 0 || recuperadas > 0 || compensadas > 0) {
             log.info(
-                "Se procesaron {} intenciones y se reconciliaron {}",
+                "Se procesaron {} intenciones, se reconciliaron {} y se "
+                    + "compensaron {}",
                 procesadas,
-                recuperadas
+                recuperadas,
+                compensadas
             );
         }
     }

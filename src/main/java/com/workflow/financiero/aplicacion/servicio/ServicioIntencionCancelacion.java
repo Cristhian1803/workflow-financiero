@@ -16,12 +16,14 @@ import com.workflow.financiero.dominio.excepcion.AccesoDenegadoException;
 import com.workflow.financiero.dominio.excepcion.CancelacionNoPermitidaException;
 import com.workflow.financiero.dominio.excepcion.DecisionInvalidaException;
 import com.workflow.financiero.dominio.excepcion.SolicitudNoEncontradaException;
+import com.workflow.financiero.dominio.modelo.IntentoCompensacion;
 import com.workflow.financiero.dominio.modelo.IntentoEjecucion;
 import com.workflow.financiero.dominio.modelo.RevisionSolicitud;
 import com.workflow.financiero.dominio.modelo.Rol;
 import com.workflow.financiero.dominio.modelo.SolicitudFinanciera;
 import com.workflow.financiero.dominio.modelo.TareaAprobacion;
 import com.workflow.financiero.dominio.modelo.Usuario;
+import com.workflow.financiero.infraestructura.persistencia.IntentoCompensacionRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.IntentoEjecucionRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.RevisionSolicitudRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.RolRepositorio;
@@ -50,6 +52,8 @@ public class ServicioIntencionCancelacion {
     private final SolicitudFinancieraRepositorio solicitudRepositorio;
     private final RevisionSolicitudRepositorio revisionRepositorio;
     private final IntentoEjecucionRepositorio intentoRepositorio;
+    private final IntentoCompensacionRepositorio compensacionRepositorio;
+    private final ServicioIntencionCompensacion servicioCompensacion;
     private final TareaAprobacionRepositorio tareaRepositorio;
     private final UsuarioRepositorio usuarioRepositorio;
     private final RolRepositorio rolRepositorio;
@@ -100,8 +104,13 @@ public class ServicioIntencionCancelacion {
 
         validarIntentoParaCancelar(intento);
 
+        boolean intencionIncierta = intento != null
+            && (intento.getEstado() == EstadoIntentoEjecucion.ENVIANDO
+                || intento.getEstado()
+                    == EstadoIntentoEjecucion.RESULTADO_DESCONOCIDO);
         if (estado == EstadoRevision.EJECUTANDO
             || estado == EstadoRevision.RESULTADO_DESCONOCIDO
+            || intencionIncierta
             || (intento != null
                 && intento.getEstado() == EstadoIntentoEjecucion.FALLIDA)) {
             return prepararCompensacion(
@@ -166,11 +175,20 @@ public class ServicioIntencionCancelacion {
             intentoRepositorio.flush();
         }
 
-        Usuario actor = usuarioRepositorio.findById(preparacion.actual().id())
-            .orElseThrow(() -> new NoSuchElementException(
-                "No existe el actor " + preparacion.actual().id()));
+        IntentoCompensacion compensacion = bloquearCompensacion(preparacion);
+        if (compensacion != null) {
+            if (liberacion == null) {
+                compensacion.marcarCanceladaSinReserva(
+                    "Cancelación sin reserva pendiente");
+            } else {
+                compensacion.marcarLiberada(liberacion.referencia());
+            }
+            compensacionRepositorio.flush();
+        }
+
+        Usuario actor = resolverActor(preparacion, compensacion);
         Rol rol = rolRepositorio.findById(
-            rolDe(preparacion.actual(), solicitud)).orElse(null);
+            rolDe(actor.getId(), solicitud)).orElse(null);
         EstadoRevision anterior = revision.getEstado();
 
         servicioTransicion.transicionar(
@@ -201,6 +219,12 @@ public class ServicioIntencionCancelacion {
         );
 
         servicioIncidente.resolverPorRevision(
+            revision.getId(),
+            preparacion.actual(),
+            "Cancelación con compensación",
+            preparacion.correlacion()
+        );
+        servicioIncidente.resolverCompensacionPorRevision(
             revision.getId(),
             preparacion.actual(),
             "Cancelación con compensación",
@@ -241,10 +265,12 @@ public class ServicioIntencionCancelacion {
             intentoRepositorio.flush();
         }
 
-        Usuario actor = usuarioRepositorio.findById(preparacion.actual().id())
-            .orElse(null);
-        Rol rol = rolRepositorio.findById(
-            rolDe(preparacion.actual(), solicitud)).orElse(null);
+        IntentoCompensacion compensacion = bloquearCompensacion(preparacion);
+        Usuario actor = resolverActor(preparacion, compensacion);
+        Rol rol = actor == null
+            ? null
+            : rolRepositorio.findById(
+                rolDe(actor.getId(), solicitud)).orElse(null);
         String detalle = error == null || error.isBlank()
             ? "No se pudo confirmar la liberación"
             : error;
@@ -259,6 +285,57 @@ public class ServicioIntencionCancelacion {
             revision.getEstado(),
             preparacion.correlacion(),
             "Compensación pendiente: " + detalle
+        );
+    }
+
+    /**
+     * Registra un fallo definitivo de compensación. La revisión permanece
+     * COMPENSANDO y la resolución queda en manos del incidente operativo.
+     */
+    @Transactional
+    public void marcarCompensacionFallida(
+        PreparacionCancelacion preparacion,
+        String error
+    ) {
+        SolicitudFinanciera solicitud = bloquearSolicitud(
+            preparacion.idSolicitud());
+        RevisionSolicitud revision = bloquearRevision(
+            preparacion.idRevision());
+        validarRevisionActual(solicitud, revision);
+
+        if (revision.getEstado() != EstadoRevision.COMPENSANDO) {
+            return;
+        }
+
+        IntentoEjecucion intento = preparacion.idIntento() == null
+            ? null
+            : bloquearIntento(preparacion.idIntento());
+        if (intento != null
+            && intento.getEstado() == EstadoIntentoEjecucion.COMPENSANDO) {
+            intento.registrarErrorCompensacion(error);
+            intentoRepositorio.flush();
+        }
+
+        IntentoCompensacion compensacion = bloquearCompensacion(preparacion);
+        Usuario actor = resolverActor(preparacion, compensacion);
+        Rol rol = actor == null
+            ? null
+            : rolRepositorio.findById(
+                rolDe(actor.getId(), solicitud)).orElse(null);
+        String detalle = error == null || error.isBlank()
+            ? "No se pudo compensar la reserva"
+            : error;
+
+        servicioEvento.registrar(
+            solicitud,
+            revision,
+            TipoEventoSolicitud.COMPENSACION_FALLIDA,
+            actor,
+            rol,
+            revision.getEstado(),
+            revision.getEstado(),
+            preparacion.correlacion(),
+            "Compensación fallida: " + detalle
         );
     }
 
@@ -324,7 +401,10 @@ public class ServicioIntencionCancelacion {
             actual,
             EstadoRevision.CANCELADA,
             false,
-            false
+            false,
+            null,
+            false,
+            0
         );
     }
 
@@ -365,9 +445,14 @@ public class ServicioIntencionCancelacion {
             )
         );
 
+        boolean despachoEnCurso = intento != null
+            && intento.getEstado() == EstadoIntentoEjecucion.ENVIANDO;
         boolean intencionEnCompensacion = false;
         if (intento != null) {
-            if (intento.getEstado() == EstadoIntentoEjecucion.FALLIDA) {
+            if (intento.getEstado() == EstadoIntentoEjecucion.FALLIDA
+                || intento.getEstado() == EstadoIntentoEjecucion.ENVIANDO
+                || intento.getEstado()
+                    == EstadoIntentoEjecucion.RESULTADO_DESCONOCIDO) {
                 intento.marcarCompensando(actor, motivo);
                 intencionEnCompensacion = true;
             } else if (intento.getEstado()
@@ -381,6 +466,14 @@ public class ServicioIntencionCancelacion {
             intentoRepositorio.flush();
         }
 
+        IntentoCompensacion compensacion = servicioCompensacion.crearObtener(
+            solicitud.getId(),
+            revision.getId(),
+            actor,
+            motivo,
+            despachoEnCurso
+        );
+
         return new PreparacionCancelacion(
             solicitud.getId(),
             revision.getId(),
@@ -393,7 +486,10 @@ public class ServicioIntencionCancelacion {
             actual,
             EstadoRevision.COMPENSANDO,
             true,
-            intencionEnCompensacion
+            intencionEnCompensacion,
+            compensacion.getId(),
+            despachoEnCurso,
+            0
         );
     }
 
@@ -405,6 +501,16 @@ public class ServicioIntencionCancelacion {
         String motivo,
         String correlacion
     ) {
+        IntentoCompensacion compensacion = compensacionRepositorio
+            .buscarPorRevisionIdParaActualizar(revision.getId())
+            .orElseGet(() -> servicioCompensacion.crearObtener(
+                solicitud.getId(),
+                revision.getId(),
+                cargarActor(actual),
+                motivo,
+                false
+            ));
+
         return new PreparacionCancelacion(
             solicitud.getId(),
             revision.getId(),
@@ -418,7 +524,10 @@ public class ServicioIntencionCancelacion {
             EstadoRevision.COMPENSANDO,
             false,
             intento != null
-                && intento.getEstado() == EstadoIntentoEjecucion.COMPENSANDO
+                && intento.getEstado() == EstadoIntentoEjecucion.COMPENSANDO,
+            compensacion.getId(),
+            compensacion.isDespachoEnCurso(),
+            compensacion.getIntentos()
         );
     }
 
@@ -464,10 +573,9 @@ public class ServicioIntencionCancelacion {
         switch (intento.getEstado()) {
             case CONFIRMADA -> throw new CancelacionNoPermitidaException(
                 "La ejecución ya fue confirmada por el proveedor");
-            case ENVIANDO, RESULTADO_DESCONOCIDO ->
-                throw new CancelacionNoPermitidaException(
-                    "El resultado de la confirmación es incierto; "
-                        + "la cancelación requiere reconciliación");
+            case ENVIANDO, RESULTADO_DESCONOCIDO -> {
+                // Se resuelve con la compensación y la reconciliación.
+            }
             case COMPENSADA, CANCELADA ->
                 throw new CancelacionNoPermitidaException(
                     "La revisión ya fue cancelada");
@@ -561,9 +669,40 @@ public class ServicioIntencionCancelacion {
     }
 
     private String rolDe(UsuarioActual actual, SolicitudFinanciera solicitud) {
-        return solicitud.getSolicitante().getId().equals(actual.id())
+        return rolDe(actual.id(), solicitud);
+    }
+
+    private String rolDe(UUID actorId, SolicitudFinanciera solicitud) {
+        return solicitud.getSolicitante().getId().equals(actorId)
             ? ROL_SOLICITANTE
             : ROL_ADMINISTRADOR;
+    }
+
+    private Usuario resolverActor(
+        PreparacionCancelacion preparacion,
+        IntentoCompensacion compensacion
+    ) {
+        if (preparacion.actual() != null) {
+            return cargarActor(preparacion.actual());
+        }
+        if (compensacion != null && compensacion.getActor() != null) {
+            return compensacion.getActor();
+        }
+        throw new NoSuchElementException(
+            "No existe el actor de la compensación");
+    }
+
+    private IntentoCompensacion bloquearCompensacion(
+        PreparacionCancelacion preparacion
+    ) {
+        if (preparacion.idCompensacion() != null) {
+            return compensacionRepositorio
+                .buscarPorIdParaActualizar(preparacion.idCompensacion())
+                .orElse(null);
+        }
+        return compensacionRepositorio
+            .buscarPorRevisionIdParaActualizar(preparacion.idRevision())
+            .orElse(null);
     }
 
     private boolean verificarAutorizacion(

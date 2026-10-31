@@ -3,11 +3,13 @@ package com.workflow.financiero.aplicacion.servicio;
 import com.workflow.financiero.aplicacion.configuracion.PropiedadesEjecucion;
 import com.workflow.financiero.aplicacion.puerto.PuertoProceso;
 import com.workflow.financiero.dominio.estado.ContextoTransicion;
+import com.workflow.financiero.dominio.estado.EstadoIntentoCompensacion;
 import com.workflow.financiero.dominio.estado.EstadoIntentoEjecucion;
 import com.workflow.financiero.dominio.estado.EstadoRevision;
 import com.workflow.financiero.dominio.evento.TipoEventoSolicitud;
 import com.workflow.financiero.dominio.excepcion.EjecucionNoPermitidaException;
 import com.workflow.financiero.dominio.excepcion.TransicionEstadoInvalidaException;
+import com.workflow.financiero.dominio.modelo.IntentoCompensacion;
 import com.workflow.financiero.dominio.modelo.IntentoEjecucion;
 import com.workflow.financiero.dominio.modelo.RevisionSolicitud;
 import com.workflow.financiero.dominio.modelo.SolicitudFinanciera;
@@ -17,6 +19,7 @@ import com.workflow.financiero.dominio.ejecucion.HuellaOperacionFinanciera;
 import com.workflow.financiero.dominio.ejecucion.ResultadoOperacionFinanciera;
 import com.workflow.financiero.dominio.regla.aprobacion.ResultadoAutorizacion;
 import com.workflow.financiero.dominio.temporal.Instantes;
+import com.workflow.financiero.infraestructura.persistencia.IntentoCompensacionRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.IntentoEjecucionRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.RevisionSolicitudRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.SolicitudFinancieraRepositorio;
@@ -47,6 +50,8 @@ public class ServicioIntencionEjecucion {
     private final SolicitudFinancieraRepositorio solicitudRepositorio;
     private final RevisionSolicitudRepositorio revisionRepositorio;
     private final IntentoEjecucionRepositorio intentoRepositorio;
+    private final IntentoCompensacionRepositorio compensacionRepositorio;
+    private final ServicioIntencionCompensacion servicioCompensacion;
     private final VerificadorAutorizacionEjecucion verificador;
     private final ServicioTransicionRevision servicioTransicion;
     private final ServicioEventoSolicitud servicioEvento;
@@ -222,6 +227,9 @@ public class ServicioIntencionEjecucion {
         SolicitudFinanciera solicitud = bloquearSolicitud(trabajo.solicitudId());
         RevisionSolicitud revision = bloquearRevision(trabajo.revisionId());
         IntentoEjecucion intento = bloquearIntento(trabajo.intentoId());
+        IntentoCompensacion compensacion = compensacionRepositorio
+            .buscarPorRevisionIdParaActualizar(revision.getId())
+            .orElse(null);
         validarCorrespondencia(solicitud, revision, trabajo);
 
         if (intento.getEstado() == EstadoIntentoEjecucion.CONFIRMADA
@@ -230,15 +238,41 @@ public class ServicioIntencionEjecucion {
         }
         if (revision.getEstado() == EstadoRevision.RECHAZADA
             || revision.getEstado() == EstadoRevision.CANCELADA
-            || revision.getEstado() == EstadoRevision.COMPENSANDO
-            || intento.getEstado() == EstadoIntentoEjecucion.COMPENSANDO
             || intento.getEstado() == EstadoIntentoEjecucion.COMPENSADA
-            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA) {
+            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA
+            || (compensacion != null
+                && (compensacion.getEstado()
+                        == EstadoIntentoCompensacion.LIBERADA
+                    || compensacion.getEstado()
+                        == EstadoIntentoCompensacion.CANCELADA))) {
             throw new EjecucionNoPermitidaException(
                 "La revisión ya está en estado " + revision.getEstado());
         }
 
         validarResultado(trabajo, reserva, confirmacion);
+
+        if (compensacion != null) {
+            compensacion.marcarRechazada(
+                "La ejecución fue confirmada; cancelación rechazada");
+            compensacionRepositorio.flush();
+            servicioEvento.registrar(
+                solicitud,
+                revision,
+                TipoEventoSolicitud.CANCELACION_RECHAZADA,
+                null,
+                null,
+                revision.getEstado(),
+                EstadoRevision.EJECUTADA,
+                CORRELACION_RECUPERACION,
+                "La ejecución fue confirmada; cancelación rechazada"
+            );
+            servicioIncidente.resolverCompensacionPorRevision(
+                revision.getId(),
+                null,
+                "Ejecución confirmada; cancelación rechazada",
+                CORRELACION_RECUPERACION
+            );
+        }
 
         intento.confirmar(
             reserva.referencia(),
@@ -304,12 +338,16 @@ public class ServicioIntencionEjecucion {
         IntentoEjecucion intento = bloquearIntento(trabajo.intentoId());
         validarCorrespondencia(solicitud, revision, trabajo);
 
+        IntentoCompensacion compensacion = compensacionRepositorio
+            .buscarPorRevisionId(revision.getId())
+            .orElse(null);
         if (intento.getEstado() == EstadoIntentoEjecucion.CONFIRMADA
             || revision.getEstado().esTerminal()
             || revision.getEstado() == EstadoRevision.COMPENSANDO
             || intento.getEstado() == EstadoIntentoEjecucion.COMPENSANDO
             || intento.getEstado() == EstadoIntentoEjecucion.COMPENSADA
-            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA) {
+            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA
+            || (compensacion != null && compensacion.estaActiva())) {
             return null;
         }
 
@@ -341,12 +379,21 @@ public class ServicioIntencionEjecucion {
         IntentoEjecucion intento = bloquearIntento(trabajo.intentoId());
         validarCorrespondencia(solicitud, revision, trabajo);
 
+        IntentoCompensacion compensacion = compensacionRepositorio
+            .buscarPorRevisionId(revision.getId())
+            .orElse(null);
         if (intento.getEstado() == EstadoIntentoEjecucion.CONFIRMADA
             || revision.getEstado().esTerminal()
             || revision.getEstado() == EstadoRevision.COMPENSANDO
             || intento.getEstado() == EstadoIntentoEjecucion.COMPENSANDO
             || intento.getEstado() == EstadoIntentoEjecucion.COMPENSADA
-            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA) {
+            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA
+            || (compensacion != null && compensacion.estaActiva())) {
+            if (compensacion != null && reintentable) {
+                servicioCompensacion.marcarDespachoAbortado(
+                    revision.getId(),
+                    "Fallo definitivo antes de confirmar: " + motivo);
+            }
             return null;
         }
 
@@ -392,9 +439,14 @@ public class ServicioIntencionEjecucion {
         IntentoEjecucion intento = bloquearIntento(trabajo.intentoId());
         validarCorrespondencia(solicitud, revision, trabajo);
 
+        IntentoCompensacion compensacion = compensacionRepositorio
+            .buscarPorRevisionId(revision.getId())
+            .orElse(null);
         if (revision.getEstado().esTerminal()
             || revision.getEstado() == EstadoRevision.RESULTADO_DESCONOCIDO
-            || intento.getEstado() == EstadoIntentoEjecucion.CONFIRMADA) {
+            || revision.getEstado() == EstadoRevision.COMPENSANDO
+            || intento.getEstado() == EstadoIntentoEjecucion.CONFIRMADA
+            || compensacion != null) {
             return;
         }
 
@@ -445,10 +497,14 @@ public class ServicioIntencionEjecucion {
             return;
         }
         IntentoEjecucion intento = bloquearIntento(trabajo.intentoId());
+        IntentoCompensacion compensacion = compensacionRepositorio
+            .buscarPorRevisionId(revision.getId())
+            .orElse(null);
         if (intento.getEstado() == EstadoIntentoEjecucion.CONFIRMADA
             || intento.getEstado() == EstadoIntentoEjecucion.COMPENSANDO
             || intento.getEstado() == EstadoIntentoEjecucion.COMPENSADA
-            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA) {
+            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA
+            || (compensacion != null && compensacion.estaActiva())) {
             return;
         }
         intento.programarReintento(
@@ -470,13 +526,70 @@ public class ServicioIntencionEjecucion {
             return;
         }
         IntentoEjecucion intento = bloquearIntento(trabajo.intentoId());
+        IntentoCompensacion compensacion = compensacionRepositorio
+            .buscarPorRevisionId(revision.getId())
+            .orElse(null);
         if (intento.getEstado() == EstadoIntentoEjecucion.COMPENSANDO
             || intento.getEstado() == EstadoIntentoEjecucion.COMPENSADA
-            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA) {
+            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA
+            || (compensacion != null && compensacion.estaActiva())) {
             return;
         }
         intento.detenerReintentoAutomatico(motivo);
         intentoRepositorio.flush();
+    }
+
+    /**
+     * Comprueba si todavía se puede llamar al proveedor para reservar. Es una
+     * verificación de mejor esfuerzo: la idempotencia del proveedor cubre la
+     * ventana entre esta lectura y el HTTP.
+     */
+    @Transactional(readOnly = true)
+    public boolean puedeDespachar(TrabajoEjecucion trabajo) {
+        return puedeContinuarDespacho(trabajo);
+    }
+
+    /**
+     * Comprueba si todavía se puede confirmar después de reservar. Si la
+     * cancelación apareció, la reserva queda para que la compensación la
+     * libere.
+     */
+    @Transactional(readOnly = true)
+    public boolean puedeConfirmar(TrabajoEjecucion trabajo) {
+        return puedeContinuarDespacho(trabajo);
+    }
+
+    /**
+     * Deja constancia de que el trabajador no llegó a despachar. La
+     * compensación puede entonces declarar cancelación sin reserva.
+     */
+    @Transactional
+    public void abortarDespacho(TrabajoEjecucion trabajo, String detalle) {
+        servicioCompensacion.marcarDespachoAbortado(
+            trabajo.revisionId(), detalle);
+    }
+
+    private boolean puedeContinuarDespacho(TrabajoEjecucion trabajo) {
+        SolicitudFinanciera solicitud = solicitudRepositorio
+            .findById(trabajo.solicitudId())
+            .orElseThrow(() -> new NoSuchElementException(
+                "No existe la solicitud " + trabajo.solicitudId()));
+        RevisionSolicitud revision = revisionRepositorio
+            .buscarDetallePorId(trabajo.revisionId())
+            .orElseThrow(() -> new NoSuchElementException(
+                "No existe la revisión " + trabajo.revisionId()));
+        RevisionSolicitud actual = solicitud.getRevisionActual();
+        if (actual == null || !actual.getId().equals(revision.getId())) {
+            return false;
+        }
+        if (revision.getEstado().esTerminal()
+            || revision.getEstado() == EstadoRevision.COMPENSANDO
+            || revision.getEstado() == EstadoRevision.REVISION_MANUAL) {
+            return false;
+        }
+        return compensacionRepositorio
+            .buscarPorRevisionId(revision.getId())
+            .isEmpty();
     }
 
     /**
@@ -514,9 +627,14 @@ public class ServicioIntencionEjecucion {
             )
         );
 
+        IntentoCompensacion compensacion = compensacionRepositorio
+            .buscarPorRevisionId(revision.getId())
+            .orElse(null);
         if (revision.getEstado() == EstadoRevision.EJECUTADA
             || revision.getEstado() == EstadoRevision.RECHAZADA
-            || revision.getEstado() == EstadoRevision.CANCELADA) {
+            || revision.getEstado() == EstadoRevision.CANCELADA
+            || revision.getEstado() == EstadoRevision.COMPENSANDO
+            || (compensacion != null && compensacion.estaActiva())) {
             throw new EjecucionNoPermitidaException(
                 "La revisión no admite reintento en estado "
                     + revision.getEstado());
@@ -532,6 +650,14 @@ public class ServicioIntencionEjecucion {
 
         intento.reintentarManual(trabajador);
         intentoRepositorio.flush();
+        return trabajo(intento);
+    }
+
+    @Transactional(readOnly = true)
+    public TrabajoEjecucion obtenerTrabajo(UUID intentoId) {
+        IntentoEjecucion intento = intentoRepositorio.findById(intentoId)
+            .orElseThrow(() -> new NoSuchElementException(
+                "No existe la intención " + intentoId));
         return trabajo(intento);
     }
 
