@@ -101,6 +101,9 @@ public class ConfiguracionSeguridad {
                     "/api/v1/tareas-aprobacion/*/aprobar",
                     "/api/v1/tareas-aprobacion/*/rechazar"
                 ).hasAnyRole(ROLES_APROBACION);
+                autorizacion.requestMatchers(
+                    "/api/v1/incidentes/**"
+                ).hasAnyRole("OPERACIONES", "ADMINISTRADOR");
                 autorizacion.anyRequest().authenticated();
             })
             .oauth2ResourceServer(oauth2 -> oauth2
