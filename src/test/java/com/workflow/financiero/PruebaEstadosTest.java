@@ -87,6 +87,7 @@ class PruebaEstadosTest extends PruebaIntegracionBase {
         ),
         EstadoRevision.COMPENSANDO, Set.of(
             EstadoRevision.CANCELADA,
+            EstadoRevision.EJECUTADA,
             EstadoRevision.REVISION_MANUAL
         ),
         EstadoRevision.REVISION_MANUAL, Set.of(EstadoRevision.EVALUANDO_RIESGO)
@@ -137,7 +138,7 @@ class PruebaEstadosTest extends PruebaIntegracionBase {
     @DisplayName("La máquina de estados define exactamente las transiciones permitidas")
     void laMaquinaDeEstadosDefineLasTransicionesPermitidas() {
         assertThat(TRANSICIONES.values().stream().mapToInt(Set::size).sum())
-            .isEqualTo(25);
+            .isEqualTo(26);
 
         TRANSICIONES.forEach((origen, destinos) -> destinos.forEach(destino ->
             assertThat(origen.puedeTransicionarA(destino))

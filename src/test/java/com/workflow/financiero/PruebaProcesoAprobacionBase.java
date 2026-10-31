@@ -10,6 +10,7 @@ import com.workflow.financiero.aplicacion.puerto.PuertoProceso;
 import com.workflow.financiero.aplicacion.servicio.ServicioIncidente;
 import com.workflow.financiero.aplicacion.servicio.ServicioIntencionEjecucion;
 import com.workflow.financiero.aplicacion.simulador.ConfiguracionFallosSimulador;
+import com.workflow.financiero.infraestructura.ejecucion.TrabajadorCompensacion;
 import com.workflow.financiero.infraestructura.ejecucion.TrabajadorEjecucion;
 import com.workflow.financiero.infraestructura.ejecucion.TrabajadorRecuperacionEjecucion;
 import com.workflow.financiero.infraestructura.seguridad.SembradorUsuariosDemo;
@@ -91,6 +92,9 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
 
     @Autowired
     TrabajadorRecuperacionEjecucion trabajadorRecuperacion;
+
+    @Autowired
+    TrabajadorCompensacion trabajadorCompensacion;
 
     @Autowired
     ServicioIntencionEjecucion servicioIntencion;
@@ -187,6 +191,20 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
         cuerpo.put("motivo", motivo);
         return mockMvc.perform(conToken(
                 post(RUTA_TAREAS + "/" + tareaId + "/rechazar"), token(usuario))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsBytes(cuerpo)));
+    }
+
+    ResultActions reintentarIncidenteApi(
+        String incidenteId,
+        String usuario,
+        String motivo
+    ) throws Exception {
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("motivo", motivo);
+        return mockMvc.perform(conToken(
+                post(RUTA_INCIDENTES + "/" + incidenteId + "/reintentar"),
+                token(usuario))
             .contentType(MediaType.APPLICATION_JSON)
             .content(objectMapper.writeValueAsBytes(cuerpo)));
     }
@@ -541,65 +559,146 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
         return trabajadorRecuperacion.reconciliarPendientes();
     }
 
+    int ejecutarCompensacion() {
+        return trabajadorCompensacion.procesarPendientes();
+    }
+
+    String estadoCompensacion(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT intecomp_estado FROM intento_compensacion "
+                + "WHERE intecomp_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    String idCompensacion(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT intecomp_id::text FROM intento_compensacion "
+                + "WHERE intecomp_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    long contarCompensaciones(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM intento_compensacion "
+                + "WHERE intecomp_revisoli_id = ?",
+            Long.class,
+            UUID.fromString(revisionId));
+    }
+
+    int intentosCompensacion(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT intecomp_intentos FROM intento_compensacion "
+                + "WHERE intecomp_revisoli_id = ?",
+            Integer.class,
+            UUID.fromString(revisionId));
+    }
+
+    boolean despachoEnCursoCompensacion(String revisionId) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+            "SELECT intecomp_despacho_en_curso FROM intento_compensacion "
+                + "WHERE intecomp_revisoli_id = ?",
+            Boolean.class,
+            UUID.fromString(revisionId)));
+    }
+
     long contarIncidentes() {
         return jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM incidente", Long.class);
     }
 
     String idIncidente(String revisionId) {
+        return idIncidente(revisionId, "EJECUCION");
+    }
+
+    String idIncidente(String revisionId, String tipo) {
         return jdbcTemplate.queryForObject(
             "SELECT inci_id::text FROM incidente "
-                + "WHERE inci_revisoli_id = ?",
+                + "WHERE inci_revisoli_id = ? AND inci_tipo = ?",
             String.class,
-            UUID.fromString(revisionId));
+            UUID.fromString(revisionId),
+            tipo);
     }
 
     String estadoIncidente(String revisionId) {
+        return estadoIncidente(revisionId, "EJECUCION");
+    }
+
+    String estadoIncidente(String revisionId, String tipo) {
         return jdbcTemplate.queryForObject(
-            "SELECT inci_estado FROM incidente WHERE inci_revisoli_id = ?",
+            "SELECT inci_estado FROM incidente "
+                + "WHERE inci_revisoli_id = ? AND inci_tipo = ?",
             String.class,
-            UUID.fromString(revisionId));
+            UUID.fromString(revisionId),
+            tipo);
     }
 
     boolean incidenteReintentable(String revisionId) {
+        return incidenteReintentable(revisionId, "EJECUCION");
+    }
+
+    boolean incidenteReintentable(String revisionId, String tipo) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
             "SELECT inci_reintentable FROM incidente "
-                + "WHERE inci_revisoli_id = ?",
+                + "WHERE inci_revisoli_id = ? AND inci_tipo = ?",
             Boolean.class,
-            UUID.fromString(revisionId)));
+            UUID.fromString(revisionId),
+            tipo));
     }
 
     String motivoIncidente(String revisionId) {
+        return motivoIncidente(revisionId, "EJECUCION");
+    }
+
+    String motivoIncidente(String revisionId, String tipo) {
         return jdbcTemplate.queryForObject(
-            "SELECT inci_motivo FROM incidente WHERE inci_revisoli_id = ?",
+            "SELECT inci_motivo FROM incidente "
+                + "WHERE inci_revisoli_id = ? AND inci_tipo = ?",
             String.class,
-            UUID.fromString(revisionId));
+            UUID.fromString(revisionId),
+            tipo);
     }
 
     String ultimoResultadoIncidente(String revisionId) {
+        return ultimoResultadoIncidente(revisionId, "EJECUCION");
+    }
+
+    String ultimoResultadoIncidente(String revisionId, String tipo) {
         return jdbcTemplate.queryForObject(
             "SELECT inci_ultimo_resultado FROM incidente "
-                + "WHERE inci_revisoli_id = ?",
+                + "WHERE inci_revisoli_id = ? AND inci_tipo = ?",
             String.class,
-            UUID.fromString(revisionId));
+            UUID.fromString(revisionId),
+            tipo);
     }
 
     int reintentosIncidente(String revisionId) {
+        return reintentosIncidente(revisionId, "EJECUCION");
+    }
+
+    int reintentosIncidente(String revisionId, String tipo) {
         Integer valor = jdbcTemplate.queryForObject(
             "SELECT inci_reintentos FROM incidente "
-                + "WHERE inci_revisoli_id = ?",
+                + "WHERE inci_revisoli_id = ? AND inci_tipo = ?",
             Integer.class,
-            UUID.fromString(revisionId));
+            UUID.fromString(revisionId),
+            tipo);
         return valor == null ? 0 : valor;
     }
 
     String actorIncidente(String revisionId) {
+        return actorIncidente(revisionId, "EJECUCION");
+    }
+
+    String actorIncidente(String revisionId, String tipo) {
         return jdbcTemplate.queryForObject(
             "SELECT u.usua_usuario FROM incidente i "
                 + "LEFT JOIN usuario u ON u.usua_id = i.inci_actor_usua_id "
-                + "WHERE i.inci_revisoli_id = ?",
+                + "WHERE i.inci_revisoli_id = ? AND i.inci_tipo = ?",
             String.class,
-            UUID.fromString(revisionId));
+            UUID.fromString(revisionId),
+            tipo);
     }
 
     long contarIntentos(String revisionId) {

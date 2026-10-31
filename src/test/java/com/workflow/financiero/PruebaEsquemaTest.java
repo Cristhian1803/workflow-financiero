@@ -143,7 +143,14 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new Restriccion("fk_incidente_revision_solicitud", "f"),
             new Restriccion("fk_incidente_actor", "f"),
             new Restriccion("ck_incidente_tipo", "c"),
-            new Restriccion("ck_incidente_estado", "c")
+            new Restriccion("ck_incidente_estado", "c"),
+            new Restriccion("pk_intento_compensacion", "p"),
+            new Restriccion("uq_intento_compensacion_revision", "u"),
+            new Restriccion("uq_intento_compensacion_clave", "u"),
+            new Restriccion("ck_intento_compensacion_estado", "c"),
+            new Restriccion("fk_intento_compensacion_solicitud", "f"),
+            new Restriccion("fk_intento_compensacion_revision", "f"),
+            new Restriccion("fk_intento_compensacion_actor", "f")
         );
 
         restricciones.forEach(restriccion -> {
@@ -222,7 +229,11 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"operacion_simulada", "opersimu_creado_en"},
             new String[] {"operacion_simulada", "opersimu_actualizado_en"},
             new String[] {"incidente", "inci_creado_en"},
-            new String[] {"incidente", "inci_actualizado_en"}
+            new String[] {"incidente", "inci_actualizado_en"},
+            new String[] {"intento_compensacion", "intecomp_creado_en"},
+            new String[] {"intento_compensacion", "intecomp_actualizado_en"},
+            new String[] {"intento_compensacion", "intecomp_proximo_intento_en"},
+            new String[] {"intento_compensacion", "intecomp_reclamado_en"}
         );
 
         instantes.forEach(par -> assertThat(tipoColumna(par[0], par[1]))
@@ -318,7 +329,13 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"operacion_simulada", "opersimu_actualizado_en"},
             new String[] {"incidente", "inci_actor_usua_id"},
             new String[] {"incidente", "inci_actualizado_en"},
-            new String[] {"incidente", "inci_ultimo_resultado"}
+            new String[] {"incidente", "inci_ultimo_resultado"},
+            new String[] {"intento_compensacion", "intecomp_referencia"},
+            new String[] {"intento_compensacion", "intecomp_ultimo_error"},
+            new String[] {"intento_compensacion", "intecomp_proximo_intento_en"},
+            new String[] {"intento_compensacion", "intecomp_reclamado_en"},
+            new String[] {"intento_compensacion", "intecomp_reclamado_por"},
+            new String[] {"intento_compensacion", "intecomp_actualizado_en"}
         );
 
         opcionales.forEach(par -> assertThat(esNullable(par[0], par[1]))
@@ -431,6 +448,16 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
                 "COMPENSANDO",
                 "COMPENSADA",
                 "CANCELADA"
+            );
+        assertThat(definicionRestriccion("ck_intento_compensacion_estado"))
+            .contains(
+                "PENDIENTE",
+                "LIBERANDO",
+                "LIBERADA",
+                "CANCELADA",
+                "RECHAZADA",
+                "FALLIDA",
+                "REVISION_MANUAL"
             );
         assertThat(definicionRestriccion("ck_incidente_tipo"))
             .contains("EJECUCION", "COMPENSACION", "RIESGO_EXTERNO");

@@ -10,14 +10,18 @@ import com.workflow.financiero.aplicacion.servicio.ServicioCancelacionSolicitud;
 import com.workflow.financiero.aplicacion.servicio.ServicioUsuarioActual;
 import com.workflow.financiero.aplicacion.servicio.UsuarioActual;
 import com.workflow.financiero.aplicacion.simulador.ModoFalloSimulador;
+import com.workflow.financiero.dominio.ejecucion.AccionFinanciera;
 import com.workflow.financiero.dominio.ejecucion.ClavesOperacionFinanciera;
+import com.workflow.financiero.dominio.ejecucion.OperacionFinanciera;
 import com.workflow.financiero.dominio.excepcion.CancelacionNoPermitidaException;
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
@@ -286,8 +290,8 @@ class PruebaCancelacionCompensacionTest
     }
 
     @Test
-    @DisplayName("Una confirmación incierta no se cancela en esta etapa")
-    void confirmacionInciertaNoSeCancela() throws Exception {
+    @DisplayName("Una confirmación en tránsito deja la cancelación pendiente sin liberar")
+    void confirmacionEnTransitoQuedaPendiente() throws Exception {
         JsonNode creada = crear("demo", 5_000_000, "NORMAL");
         String solicitudId = creada.get("id").asText();
         String revisionId = creada.get("idRevision").asText();
@@ -299,12 +303,17 @@ class PruebaCancelacionCompensacionTest
         );
 
         cancelar(solicitudId, "demo", "Resultado todavía incierto")
-            .andExpect(status().isConflict())
-            .andExpect(jsonPath("$.codigo").value("CANCELACION_NO_PERMITIDA"));
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.estadoRevision").value("COMPENSANDO"))
+            .andExpect(jsonPath("$.compensacionPendiente").value(true));
 
-        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
-        assertThat(estadoIntento(revisionId)).isEqualTo("ENVIANDO");
+        assertThat(estadoRevision(revisionId)).isEqualTo("COMPENSANDO");
+        assertThat(estadoIntento(revisionId)).isEqualTo("COMPENSANDO");
+        assertThat(estadoCompensacion(revisionId)).isEqualTo("PENDIENTE");
+        assertThat(despachoEnCursoCompensacion(revisionId)).isTrue();
         assertThat(proveedorDirecto.liberaciones()).isZero();
+        assertThat(contarEventosTipoDeRevision(
+            revisionId, "COMPENSACION_PENDIENTE")).isEqualTo(1);
     }
 
     @Test
@@ -397,6 +406,361 @@ class PruebaCancelacionCompensacionTest
             .count()).isZero();
         assertThat(buscarTimer(procesoId, "notificarSupervisor24h")).isNull();
         assertThat(buscarTimer(procesoId, "reasignarSupervisor48h")).isNull();
+    }
+
+    @Test
+    @DisplayName("Si la confirmación llega después, la ejecución gana y la cancelación se rechaza")
+    void confirmacionPosteriorRechazaCancelacion() throws Exception {
+        JsonNode creada = crear("demo", 5_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+        String procesoId = identificadorProceso(solicitudId);
+
+        jdbcTemplate.update(
+            "UPDATE intento_ejecucion SET inteejec_estado = 'ENVIANDO' "
+                + "WHERE inteejec_revisoli_id = ?",
+            UUID.fromString(revisionId)
+        );
+
+        cancelar(solicitudId, "demo", "Se intenta cancelar en tránsito")
+            .andExpect(status().isAccepted());
+        assertThat(estadoCompensacion(revisionId)).isEqualTo("PENDIENTE");
+
+        proveedorDirecto.reservar(operacion(
+            solicitudId, revisionId, AccionFinanciera.RESERVA));
+        proveedorDirecto.confirmar(operacion(
+            solicitudId, revisionId, AccionFinanciera.CONFIRMACION));
+
+        ejecutarCompensacion();
+
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTADA");
+        assertThat(estadoIntento(revisionId)).isEqualTo("CONFIRMADA");
+        assertThat(estadoCompensacion(revisionId)).isEqualTo("RECHAZADA");
+        assertThat(proveedorDirecto.liberaciones()).isZero();
+        assertThat(contarOperacionesSimuladas("LIBERACION")).isZero();
+        assertThat(contarEventosTipoDeRevision(
+            revisionId, "CANCELACION_RECHAZADA")).isEqualTo(1);
+        assertThat(procesoFinalizado(procesoId)).isTrue();
+
+        cancelar(solicitudId, "demo", "Segundo intento")
+            .andExpect(status().isConflict());
+    }
+
+    @Test
+    @DisplayName("Una liberación con respuesta perdida se recupera por la misma clave")
+    void liberacionConRespuestaPerdidaSeRecupera() throws Exception {
+        JsonNode creada = crear("demo", 5_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+
+        fallos.configurar(
+            claveConfirmacion(solicitudId, revisionId),
+            ModoFalloSimulador.ERROR_DEFINITIVO
+        );
+        ejecutarTrabajador();
+        fallos.limpiar();
+        fallos.configurar(
+            claveLiberacion(solicitudId, revisionId),
+            ModoFalloSimulador.RESPUESTA_PERDIDA
+        );
+
+        cancelar(solicitudId, "demo", "Se compensa con respuesta perdida")
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.estadoRevision").value("CANCELADA"));
+
+        assertThat(estadoRevision(revisionId)).isEqualTo("CANCELADA");
+        assertThat(estadoIntento(revisionId)).isEqualTo("COMPENSADA");
+        assertThat(estadoCompensacion(revisionId)).isEqualTo("LIBERADA");
+        assertThat(estadoOperacionSimulada(
+            claveReserva(solicitudId, revisionId))).isEqualTo("LIBERADA");
+        assertThat(estadoOperacionSimulada(
+            claveLiberacion(solicitudId, revisionId))).isEqualTo("LIBERADA");
+        assertThat(proveedorDirecto.liberaciones()).isEqualTo(1);
+        assertThat(contarOperacionesSimuladas("LIBERACION")).isEqualTo(1);
+        assertThat(estadoIncidente(revisionId)).isEqualTo("RESUELTO");
+        assertThat(contarEventosTipoDeRevision(
+            revisionId, "COMPENSACION_CONFIRMADA")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("La liberación fallida se reintenta y termina en revisión manual")
+    void liberacionFallidaReintentaHastaManualYSeResuelve() throws Exception {
+        JsonNode creada = crear("demo", 5_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+
+        fallos.configurar(
+            claveConfirmacion(solicitudId, revisionId),
+            ModoFalloSimulador.ERROR_DEFINITIVO
+        );
+        ejecutarTrabajador();
+        fallos.limpiar();
+        fallos.configurar(
+            claveLiberacion(solicitudId, revisionId),
+            ModoFalloSimulador.LIBERACION_FALLIDA
+        );
+
+        cancelar(solicitudId, "demo", "La liberación falla")
+            .andExpect(status().isAccepted())
+            .andExpect(jsonPath("$.estadoRevision").value("COMPENSANDO"));
+
+        for (int intento = 0; intento < 3; intento++) {
+            ejecutarCompensacion();
+        }
+
+        assertThat(estadoRevision(revisionId)).isEqualTo("COMPENSANDO");
+        assertThat(estadoCompensacion(revisionId))
+            .isEqualTo("REVISION_MANUAL");
+        assertThat(intentosCompensacion(revisionId)).isEqualTo(3);
+        assertThat(estadoIncidente(revisionId, "COMPENSACION"))
+            .isEqualTo("ABIERTO");
+        assertThat(incidenteReintentable(revisionId, "COMPENSACION")).isTrue();
+        assertThat(proveedorDirecto.liberaciones()).isZero();
+        assertThat(contarOperacionesSimuladas("LIBERACION")).isZero();
+
+        fallos.limpiar();
+        String incidenteId = idIncidente(revisionId, "COMPENSACION");
+        reintentarIncidenteApi(
+            incidenteId, "operaciones", "Proveedor recuperado")
+            .andExpect(status().isOk());
+
+        assertThat(estadoRevision(revisionId)).isEqualTo("CANCELADA");
+        assertThat(estadoCompensacion(revisionId)).isEqualTo("LIBERADA");
+        assertThat(estadoIncidente(revisionId, "COMPENSACION"))
+            .isEqualTo("RESUELTO");
+        assertThat(reintentosIncidente(revisionId, "COMPENSACION"))
+            .isEqualTo(1);
+        assertThat(actorIncidente(revisionId, "COMPENSACION"))
+            .isEqualTo("operaciones");
+        assertThat(proveedorDirecto.liberaciones()).isEqualTo(1);
+        assertThat(contarOperacionesSimuladas("LIBERACION")).isEqualTo(1);
+        assertThat(estadoOperacionSimulada(
+            claveReserva(solicitudId, revisionId))).isEqualTo("LIBERADA");
+    }
+
+    @Test
+    @DisplayName("Un reinicio durante la compensación retoma la liberación sin duplicar")
+    void reinicioDuranteCompensacion() throws Exception {
+        JsonNode creada = crear("demo", 5_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+
+        fallos.configurar(
+            claveConfirmacion(solicitudId, revisionId),
+            ModoFalloSimulador.ERROR_DEFINITIVO
+        );
+        ejecutarTrabajador();
+        fallos.limpiar();
+        fallos.configurar(
+            claveLiberacion(solicitudId, revisionId),
+            ModoFalloSimulador.LIBERACION_FALLIDA
+        );
+        cancelar(solicitudId, "demo", "Compensación que se interrumpe")
+            .andExpect(status().isAccepted());
+
+        jdbcTemplate.update(
+            "UPDATE intento_compensacion "
+                + "SET intecomp_estado = 'LIBERANDO', "
+                + "intecomp_reclamado_en = now() - interval '1 minute' "
+                + "WHERE intecomp_revisoli_id = ?",
+            UUID.fromString(revisionId)
+        );
+        fallos.limpiar();
+
+        ejecutarCompensacion();
+
+        assertThat(estadoRevision(revisionId)).isEqualTo("CANCELADA");
+        assertThat(estadoCompensacion(revisionId)).isEqualTo("LIBERADA");
+        assertThat(proveedorDirecto.liberaciones()).isEqualTo(1);
+        assertThat(contarOperacionesSimuladas("LIBERACION")).isEqualTo(1);
+        assertThat(estadoOperacionSimulada(
+            claveReserva(solicitudId, revisionId))).isEqualTo("LIBERADA");
+    }
+
+    @Test
+    @DisplayName("La cancelación duplicada con reserva produce una sola compensación")
+    void cancelacionDuplicadaConCompensacion() throws Exception {
+        JsonNode creada = crear("demo", 5_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+
+        fallos.configurar(
+            claveConfirmacion(solicitudId, revisionId),
+            ModoFalloSimulador.ERROR_DEFINITIVO
+        );
+        ejecutarTrabajador();
+        fallos.limpiar();
+
+        cancelar(solicitudId, "demo", "Primera cancelación")
+            .andExpect(status().isOk());
+        cancelar(solicitudId, "demo", "Segunda cancelación")
+            .andExpect(status().isConflict());
+
+        assertThat(estadoRevision(revisionId)).isEqualTo("CANCELADA");
+        assertThat(contarCompensaciones(revisionId)).isEqualTo(1);
+        assertThat(proveedorDirecto.liberaciones()).isEqualTo(1);
+        assertThat(contarEventosTipoDeRevision(
+            revisionId, "COMPENSACION_CONFIRMADA")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("El proceso sigue activo mientras la compensación está pendiente")
+    void procesoPermaneceActivoMientrasCompensacionPendiente() throws Exception {
+        JsonNode creada = crear("demo", 5_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+        String procesoId = identificadorProceso(solicitudId);
+
+        proveedorDirecto.reservar(operacion(
+            solicitudId, revisionId, AccionFinanciera.RESERVA));
+        jdbcTemplate.update(
+            "UPDATE intento_ejecucion SET inteejec_estado = 'FALLIDA' "
+                + "WHERE inteejec_revisoli_id = ?",
+            UUID.fromString(revisionId)
+        );
+        fallos.configurar(
+            claveLiberacion(solicitudId, revisionId),
+            ModoFalloSimulador.LIBERACION_FALLIDA
+        );
+
+        cancelar(solicitudId, "demo", "Compensación pendiente")
+            .andExpect(status().isAccepted());
+
+        assertThat(procesoActivo(procesoId)).isTrue();
+        assertThat(estadoCompensacion(revisionId)).isEqualTo("PENDIENTE");
+
+        fallos.limpiar();
+        ejecutarCompensacion();
+
+        assertThat(estadoRevision(revisionId)).isEqualTo("CANCELADA");
+        assertThat(procesoFinalizado(procesoId)).isTrue();
+        assertThat(taskService.createTaskQuery()
+            .processInstanceId(procesoId)
+            .count()).isZero();
+    }
+
+    @Test
+    @DisplayName("La cancelación gana antes de reservar y el trabajador no confirma")
+    void cancelacionGanaAntesDeReservar() throws Exception {
+        JsonNode creada = crear("demo", 5_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+
+        proveedorDirecto.pausarAntesDeReservar();
+        ExecutorService ejecutor = Executors.newSingleThreadExecutor();
+        Future<Integer> futuro = ejecutor.submit(this::ejecutarTrabajador);
+        try {
+            proveedorDirecto.esperarPausaReserva();
+
+            cancelar(solicitudId, "demo", "La cancelación gana la carrera")
+                .andExpect(status().isAccepted());
+            assertThat(estadoCompensacion(revisionId))
+                .isEqualTo("PENDIENTE");
+            assertThat(despachoEnCursoCompensacion(revisionId)).isTrue();
+
+            proveedorDirecto.liberarReserva();
+            futuro.get(20, TimeUnit.SECONDS);
+
+            assertThat(proveedorDirecto.reservas()).isEqualTo(1);
+            assertThat(proveedorDirecto.confirmaciones()).isZero();
+            assertThat(despachoEnCursoCompensacion(revisionId)).isFalse();
+
+            ejecutarCompensacion();
+
+            assertThat(estadoRevision(revisionId)).isEqualTo("CANCELADA");
+            assertThat(estadoCompensacion(revisionId))
+                .isEqualTo("LIBERADA");
+            assertThat(proveedorDirecto.liberaciones()).isEqualTo(1);
+            assertThat(contarOperacionesSimuladas("CONFIRMACION")).isZero();
+        } finally {
+            proveedorDirecto.liberarReserva();
+            ejecutor.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("La cancelación gana después de reservar y antes de confirmar")
+    void cancelacionGanaAntesDeConfirmar() throws Exception {
+        JsonNode creada = crear("demo", 5_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+
+        proveedorDirecto.pausarAntesDeConfirmar();
+        ExecutorService ejecutor = Executors.newSingleThreadExecutor();
+        Future<Integer> futuro = ejecutor.submit(this::ejecutarTrabajador);
+        try {
+            proveedorDirecto.esperarPausaConfirmacion();
+
+            cancelar(solicitudId, "demo", "La cancelación libera primero")
+                .andExpect(status().isOk());
+
+            assertThat(estadoRevision(revisionId)).isEqualTo("CANCELADA");
+            assertThat(estadoCompensacion(revisionId))
+                .isEqualTo("LIBERADA");
+            assertThat(estadoOperacionSimulada(
+                claveReserva(solicitudId, revisionId)))
+                .isEqualTo("LIBERADA");
+
+            proveedorDirecto.liberarConfirmacion();
+            futuro.get(20, TimeUnit.SECONDS);
+
+            assertThat(proveedorDirecto.confirmaciones()).isEqualTo(1);
+            assertThat(contarOperacionesSimuladas("CONFIRMACION")).isZero();
+            assertThat(proveedorDirecto.liberaciones()).isEqualTo(1);
+        } finally {
+            proveedorDirecto.liberarConfirmacion();
+            ejecutor.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("El despacho gana la carrera y la cancelación se rechaza")
+    void despachoGanaAntesDeLaCancelacion() throws Exception {
+        JsonNode creada = crear("demo", 5_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+
+        proveedorDirecto.pausarDespuesDeConfirmar();
+        ExecutorService ejecutor = Executors.newSingleThreadExecutor();
+        Future<Integer> futuro = ejecutor.submit(this::ejecutarTrabajador);
+        try {
+            proveedorDirecto.esperarEfectoConfirmacion();
+
+            cancelar(solicitudId, "demo", "Llega tarde")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.codigo")
+                    .value("CANCELACION_NO_PERMITIDA"));
+
+            assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTADA");
+            assertThat(estadoCompensacion(revisionId))
+                .isEqualTo("RECHAZADA");
+            assertThat(proveedorDirecto.liberaciones()).isZero();
+
+            proveedorDirecto.liberarEfectoConfirmacion();
+            futuro.get(20, TimeUnit.SECONDS);
+
+            assertThat(contarOperacionesSimuladas("CONFIRMACION"))
+                .isEqualTo(1);
+            assertThat(contarOperacionesSimuladas("LIBERACION")).isZero();
+        } finally {
+            proveedorDirecto.liberarEfectoConfirmacion();
+            ejecutor.shutdownNow();
+        }
+    }
+
+    private OperacionFinanciera operacion(
+        String solicitudId,
+        String revisionId,
+        AccionFinanciera accion
+    ) {
+        return OperacionFinanciera.crear(
+            UUID.fromString(solicitudId),
+            UUID.fromString(revisionId),
+            accion,
+            BigDecimal.valueOf(5_000_000),
+            "PYG",
+            "NORMAL"
+        );
     }
 
     private String actorDeEvento(String revisionId, String tipo) {

@@ -10,6 +10,8 @@ import com.workflow.financiero.aplicacion.simulador.ServicioSimuladorProveedorFi
 import com.workflow.financiero.dominio.ejecucion.OperacionFinanciera;
 import com.workflow.financiero.dominio.ejecucion.ResultadoOperacionFinanciera;
 import java.util.NoSuchElementException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -44,11 +46,19 @@ public class ProveedorFinancieroSimuladoDirecto
     private final AtomicInteger liberaciones = new AtomicInteger();
     private final AtomicInteger consultas = new AtomicInteger();
 
+    private volatile CountDownLatch pausaReserva;
+    private volatile CountDownLatch continuarReserva;
+    private volatile CountDownLatch pausaConfirmacion;
+    private volatile CountDownLatch continuarConfirmacion;
+    private volatile CountDownLatch pausaEfectoConfirmacion;
+    private volatile CountDownLatch continuarEfectoConfirmacion;
+
     @Override
     public ResultadoOperacionFinanciera reservar(OperacionFinanciera operacion) {
         prepararFallo(operacion);
         registrarPrimeraLlamada(operacion);
         reservas.incrementAndGet();
+        esperarPausa(pausaReserva, continuarReserva);
         ResultadoOperacionFinanciera resultado = simulador.reservar(operacion);
         perderRespuestaSiCorresponde(operacion);
         return resultado;
@@ -58,7 +68,10 @@ public class ProveedorFinancieroSimuladoDirecto
     public ResultadoOperacionFinanciera confirmar(OperacionFinanciera operacion) {
         prepararFallo(operacion);
         confirmaciones.incrementAndGet();
+        esperarPausa(pausaConfirmacion, continuarConfirmacion);
         ResultadoOperacionFinanciera resultado = simulador.confirmar(operacion);
+        esperarPausa(
+            pausaEfectoConfirmacion, continuarEfectoConfirmacion);
         perderRespuestaSiCorresponde(operacion);
         return resultado;
     }
@@ -121,7 +134,93 @@ public class ProveedorFinancieroSimuladoDirecto
         confirmaciones.set(0);
         liberaciones.set(0);
         consultas.set(0);
+        pausaReserva = null;
+        continuarReserva = null;
+        pausaConfirmacion = null;
+        continuarConfirmacion = null;
+        pausaEfectoConfirmacion = null;
+        continuarEfectoConfirmacion = null;
         fallos.limpiar();
+    }
+
+    public void pausarAntesDeReservar() {
+        pausaReserva = new CountDownLatch(1);
+        continuarReserva = new CountDownLatch(1);
+    }
+
+    public void esperarPausaReserva() throws InterruptedException {
+        CountDownLatch pausa = pausaReserva;
+        if (pausa != null && !pausa.await(10, TimeUnit.SECONDS)) {
+            throw new IllegalStateException(
+                "El trabajador no llegó a la pausa de reserva");
+        }
+    }
+
+    public void liberarReserva() {
+        CountDownLatch continuar = continuarReserva;
+        if (continuar != null) {
+            continuar.countDown();
+        }
+    }
+
+    public void pausarAntesDeConfirmar() {
+        pausaConfirmacion = new CountDownLatch(1);
+        continuarConfirmacion = new CountDownLatch(1);
+    }
+
+    public void esperarPausaConfirmacion() throws InterruptedException {
+        CountDownLatch pausa = pausaConfirmacion;
+        if (pausa != null && !pausa.await(10, TimeUnit.SECONDS)) {
+            throw new IllegalStateException(
+                "El trabajador no llegó a la pausa de confirmación");
+        }
+    }
+
+    public void liberarConfirmacion() {
+        CountDownLatch continuar = continuarConfirmacion;
+        if (continuar != null) {
+            continuar.countDown();
+        }
+    }
+
+    public void pausarDespuesDeConfirmar() {
+        pausaEfectoConfirmacion = new CountDownLatch(1);
+        continuarEfectoConfirmacion = new CountDownLatch(1);
+    }
+
+    public void esperarEfectoConfirmacion() throws InterruptedException {
+        CountDownLatch pausa = pausaEfectoConfirmacion;
+        if (pausa != null && !pausa.await(10, TimeUnit.SECONDS)) {
+            throw new IllegalStateException(
+                "El trabajador no llegó al efecto de confirmación");
+        }
+    }
+
+    public void liberarEfectoConfirmacion() {
+        CountDownLatch continuar = continuarEfectoConfirmacion;
+        if (continuar != null) {
+            continuar.countDown();
+        }
+    }
+
+    private void esperarPausa(
+        CountDownLatch pausa,
+        CountDownLatch continuar
+    ) {
+        if (pausa == null || continuar == null) {
+            return;
+        }
+        pausa.countDown();
+        try {
+            if (!continuar.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException(
+                    "La prueba no liberó la pausa del proveedor");
+            }
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(
+                "Se interrumpió la pausa del proveedor", error);
+        }
     }
 
     private void prepararFallo(OperacionFinanciera operacion) {
