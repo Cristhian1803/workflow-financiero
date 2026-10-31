@@ -127,6 +127,24 @@ public class RevisionSolicitud {
         this.actualizadoEn = Instantes.ahora();
     }
 
+    /**
+     * Aplica el riesgo consolidado después de recibir la evaluación externa.
+     * No cambia el estado de la revisión: la espera BPMN sigue su curso.
+     */
+    public void consolidarNivelRiesgo(NivelRiesgo nivel) {
+        if (nivel == null) {
+            throw new IllegalArgumentException("El nivel de riesgo es obligatorio");
+        }
+        if (estado != EstadoRevision.EVALUANDO_RIESGO
+            && estado != EstadoRevision.PENDIENTE_APROBACION) {
+            throw new TransicionEstadoInvalidaException(
+                "No se puede consolidar el riesgo en estado " + estado);
+        }
+
+        this.nivelRiesgo = nivel;
+        this.actualizadoEn = Instantes.ahora();
+    }
+
     public void registrarIdentificadorProceso(String identificador) {
         if (identificador == null || identificador.isBlank()) {
             throw new IllegalArgumentException("El identificador de proceso es obligatorio");

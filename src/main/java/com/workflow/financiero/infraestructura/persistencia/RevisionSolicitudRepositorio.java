@@ -19,4 +19,23 @@ public interface RevisionSolicitudRepositorio extends JpaRepository<RevisionSoli
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from RevisionSolicitud r where r.id = :id")
     Optional<RevisionSolicitud> buscarPorIdParaActualizar(@Param("id") UUID id);
+
+    @Query("""
+        select r from RevisionSolicitud r
+        where r.solicitud.id = :solicitudId
+          and r.numero = :numero
+        """)
+    Optional<RevisionSolicitud> buscarPorSolicitudYNumero(
+        @Param("solicitudId") UUID solicitudId,
+        @Param("numero") int numero);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select r from RevisionSolicitud r
+        where r.solicitud.id = :solicitudId
+          and r.numero = :numero
+        """)
+    Optional<RevisionSolicitud> buscarPorSolicitudYNumeroParaActualizar(
+        @Param("solicitudId") UUID solicitudId,
+        @Param("numero") int numero);
 }
