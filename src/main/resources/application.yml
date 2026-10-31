@@ -34,6 +34,13 @@ flujo:
       GERENTE: GERENTE_GENERAL
       RIESGOS: JEFE_RIESGOS
 
+integracion:
+  proveedor-financiero:
+    url-base: ${PROVEEDOR_FINANCIERO_URL:http://localhost:8080/api/v1/integraciones/proveedor-financiero}
+    tiempo-conexion: ${PROVEEDOR_FINANCIERO_TIEMPO_CONEXION:PT2S}
+    tiempo-lectura: ${PROVEEDOR_FINANCIERO_TIEMPO_LECTURA:PT5S}
+    secreto: ${PROVEEDOR_FINANCIERO_SECRETO:}
+
 seguridad:
   jwt:
     secreto: ${JWT_SECRETO:}
