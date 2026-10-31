@@ -294,6 +294,22 @@ Reglas aplicadas:
 
 Errores principales: `400 DATOS_INVALIDOS`, `401 NO_AUTENTICADO`, `403 APROBACION_NO_PERMITIDA`, `403 SEGREGACION_FUNCIONES`, `404 TAREA_NO_ENCONTRADA`, `409 TAREA_YA_RESUELTA` y `409 TRANSICION_TAREA_INVALIDA`.
 
+### Rutas y aprobaciones paralelas
+
+El proceso activa solo las ramas del plan:
+
+| Monto | Riesgo | Ramas |
+|---|---|---|
+| Hasta 10 millones | Bajo o medio | Ninguna |
+| Hasta 10 millones | Alto | `RIESGOS` |
+| Hasta 50 millones | Bajo o medio | `SUPERVISOR` |
+| Hasta 50 millones | Alto | `SUPERVISOR`, `RIESGOS` |
+| Hasta 200 millones | Bajo o medio | `SUPERVISOR`, `GERENTE` |
+| Hasta 200 millones | Alto | `SUPERVISOR`, `GERENTE`, `RIESGOS` |
+| Más de 200 millones | Alto | `SUPERVISOR`, `GERENTE`, `RIESGOS` |
+
+Gerente y Riesgos son independientes y se pueden aprobar en cualquier orden. La revisión solo pasa a `APROBADA` cuando todas las ramas activadas aprobaron. Para más de 200 millones, después de las aprobaciones el proceso espera el mensaje `RIESGO_EVALUADO`; en `desarrollo` no hay una ruta HTTP para enviarlo, así que la solicitud queda en `PENDIENTE_APROBACION` hasta la integración de próximas etapas. El fixture se usa solo en pruebas automatizadas.
+
 ## API de demostración
 
 Requiere `Authorization: Bearer <token>`:
@@ -312,7 +328,7 @@ No es la API final de solicitudes.
 - Los roles del token no cambian hasta que vence; `/autenticacion/yo` muestra los roles actuales de la base.
 - El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
 - La API no cancela solicitudes, no reenvía y no ejecuta operaciones financieras reales.
-- Las rutas combinadas, el paralelismo completo y la espera de riesgo externo quedan para I-13 y el Paso 4.
+- Las rutas combinadas y el paralelismo están implementados. La integración real de riesgo externo, la cancelación y la compensación quedan para futuras etapas.
 - Los temporizadores de 24/48 horas están modelados, pero la notificación y la reasignación reales todavía no se implementan.
 - El creador no puede aprobar sus propias tareas.
 - El detalle recalcula el plan de aprobación con las políticas vigentes, porque el plan no se persiste.

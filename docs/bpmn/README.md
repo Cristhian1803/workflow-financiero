@@ -15,6 +15,9 @@ El proceso recibe el plan de aprobación ya calculado por la aplicación. Las co
 las banderas `requiereAprobacion`, `requiereSupervisor`, `requiereGerente` y
 `requiereRiesgos`; no recalculan montos, riesgos ni políticas.
 
+Cada rama tiene su propia variable de decisión: `decisionSupervisor`, `decisionGerente` y
+`decisionRiesgos`. Así una aprobación o un rechazo no pisa el resultado de otra rama.
+
 ## Flujo
 
 1. Verifica la información persistida de la solicitud y la revisión.
@@ -26,9 +29,16 @@ las banderas `requiereAprobacion`, `requiereSupervisor`, `requiereGerente` y
 6. Cada tarea humana puede aprobar o rechazar. Un rechazo pasa por `registrarRechazo` y
    termina la instancia con `terminateAll=true`.
 7. Las aprobaciones se unen en una compuerta inclusiva y luego se verifica la autorización.
-8. Si el monto requiere evaluación externa, espera el mensaje `RIESGO_EVALUADO`.
+8. Si el monto requiere evaluación externa, espera el mensaje `RIESGO_EVALUADO`. El fixture
+   de pruebas envía `riesgoExternoResuelto=true` y `nivelRiesgoExterno`; el delegate registra
+   `EVALUACION_EXTERNA_RESUELTA` y solo entonces permite continuar. El nivel externo no puede
+   ser menor que el riesgo interno.
 9. Marca la revisión como `APROBADA`, prepara la ejecución controlada y registra el
    resultado simulado. La operación financiera real no se confirma aun.
+
+La espera externa se ubica después de la unión para que las tareas puedan abrirse y
+resolverse sin depender del proveedor. La integración real, los duplicados y los eventos
+tardíos son de etapas próximas.
 
 Cada tarea humana tiene dos temporizadores de frontera no interruptores:
 
