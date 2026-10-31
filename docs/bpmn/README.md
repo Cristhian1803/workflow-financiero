@@ -93,5 +93,6 @@ delegado. Los endpoints `POST /api/v1/tareas-aprobacion/{id}/aprobar` y `/rechaz
 la decisión y avanzan el motor en la misma transacción. Un rechazo cancela las demás tareas
 de negocio de la revisión y usa el fin de terminación del proceso para cerrar las ramas
 restantes. El reenvío no modifica el BPMN: crea una revisión y una instancia nuevas y conserva
-la anterior con su historial. El paralelismo completo y la espera de riesgo externo están
-probados en el proceso real.
+la anterior con su historial. El temporizador de 24 horas crea una notificación persistida y
+consultable por el rol destinatario; la reasignación de 48 horas sigue pendiente. El
+paralelismo completo y la espera de riesgo externo están probados en el proceso real.

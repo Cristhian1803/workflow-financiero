@@ -163,6 +163,7 @@ La creación requiere el rol `SOLICITANTE` e inicia el proceso BPMN. Si el plan 
 | `GET` | `/api/v1/tareas-aprobacion` | Aprobador o delegado |
 | `POST` | `/api/v1/tareas-aprobacion/{id}/aprobar` | Actor elegible |
 | `POST` | `/api/v1/tareas-aprobacion/{id}/rechazar` | Actor elegible |
+| `GET` | `/api/v1/notificaciones` | Autenticado |
 
 ### Crear
 
@@ -235,7 +236,7 @@ Invoke-RestMethod `
   -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" }
 ```
 
-Devuelve solo tareas `PENDIENTE` de la revisión actual visibles para el actor. Incluye las tareas asignadas y las tareas sin asignar de sus roles funcionales o delegados. El creador de la solicitud no ve sus propias tareas. Cada elemento incluye `fechaCreacion`, `fechaNotificacion` calculada a +24h y `fechaVencimiento` guardada a +48h, además de los datos de la solicitud.
+Devuelve solo tareas `PENDIENTE` de la revisión actual visibles para el actor. Incluye las tareas asignadas y las tareas sin asignar de sus roles funcionales o delegados. El creador de la solicitud no ve sus propias tareas. Cada elemento incluye `fechaCreacion`, `fechaNotificacion` calculada con `flujo.aprobacion.notificacion` y `fechaVencimiento` guardada con `flujo.aprobacion.reasignacion`, además de los datos de la solicitud.
 
 Los plazos y superiores se configuran en `flujo.aprobacion`:
 
@@ -249,6 +250,18 @@ flujo:
       GERENTE: GERENTE_GENERAL
       RIESGOS: JEFE_RIESGOS
 ```
+
+### Notificaciones
+
+Cuando una tarea de aprobación sigue pendiente al cumplirse el plazo de notificación, el proceso crea una notificación persistida para el rol funcional. La API devuelve las notificaciones dirigidas al actor o a sus roles activos, sin duplicados y ordenadas por fecha descendente.
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://localhost:8080/api/v1/notificaciones `
+  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" }
+```
+
+Cada elemento incluye `id`, `tipo`, `contenido`, `estado`, `idTarea`, `idSolicitud`, `revision`, `fechaCreacion` y `fechaLectura`. En esta etapa no hay endpoint para marcar como leída ni envío de correo. Una tarea aprobada o asignada antes del vencimiento no genera la notificación de 24 horas.
 
 ### Aprobar y rechazar
 
@@ -345,7 +358,8 @@ No es la API final de solicitudes.
 - El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
 - La API no cancela solicitudes ni ejecuta operaciones financieras reales. El reenvío está disponible solo para el dueño y con las reglas de la sección de reenvío.
 - Las rutas combinadas, el paralelismo, el rechazo y el reenvío están implementados. La integración real de riesgo externo, la cancelación y la compensación quedan para futuras etapas.
-- Los temporizadores de 24/48 horas están modelados, pero la notificación y la reasignación reales todavía no se implementan.
+- La notificación de 24 horas está implementada. La reasignación de 48 horas y la delegación completa todavía no.
+- No se implementó marcar notificaciones como leídas ni envío de correo.
 - El creador no puede aprobar sus propias tareas.
 - El detalle recalcula el plan de aprobación con las políticas vigentes, porque el plan no se persiste.
 - El auditor puede consultar el historial, pero no el detalle ni el proceso de una solicitud ajena.
