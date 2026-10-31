@@ -44,6 +44,18 @@ public interface TareaAprobacionRepositorio extends JpaRepository<TareaAprobacio
         from TareaAprobacion t
         join fetch t.revision r
         join fetch r.solicitud s
+        join fetch t.rol
+        left join fetch t.asignado
+        where t.identificadorTareaMotor = :identificador
+        """)
+    Optional<TareaAprobacion> buscarPorIdentificadorTareaMotor(
+        @Param("identificador") String identificador);
+
+    @Query("""
+        select t
+        from TareaAprobacion t
+        join fetch t.revision r
+        join fetch r.solicitud s
         join fetch s.solicitante
         join fetch r.tipoOperacion
         join fetch r.moneda
