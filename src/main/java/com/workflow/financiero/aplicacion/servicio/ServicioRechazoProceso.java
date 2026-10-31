@@ -4,6 +4,7 @@ import com.workflow.financiero.dominio.estado.ContextoTransicion;
 import com.workflow.financiero.dominio.estado.EstadoRevision;
 import com.workflow.financiero.dominio.estado.EstadoTareaAprobacion;
 import com.workflow.financiero.dominio.evento.TipoEventoSolicitud;
+import com.workflow.financiero.dominio.excepcion.TransicionTareaInvalidaException;
 import com.workflow.financiero.dominio.modelo.TareaAprobacion;
 import com.workflow.financiero.dominio.modelo.Usuario;
 import com.workflow.financiero.infraestructura.persistencia.TareaAprobacionRepositorio;
@@ -44,12 +45,13 @@ public class ServicioRechazoProceso {
                 .orElseThrow(() -> new NoSuchElementException(
                     "No existe el actor " + actorId));
 
+        validarTareaRechazada(revisionId, tareaAprobacionId);
+
         List<TareaAprobacion> canceladas = tareaRepositorio
             .buscarPorRevision(revisionId)
             .stream()
             .filter(tarea -> tarea.getEstado() == EstadoTareaAprobacion.PENDIENTE)
-            .filter(tarea -> tareaAprobacionId == null
-                || !tarea.getId().equals(tareaAprobacionId))
+            .filter(tarea -> !tarea.getId().equals(tareaAprobacionId))
             .toList();
 
         canceladas.forEach(TareaAprobacion::cancelar);
@@ -83,5 +85,26 @@ public class ServicioRechazoProceso {
             new ContextoTransicion(actorId, rolFuncional, correlacion, detalle)
         );
         tareaRepositorio.flush();
+    }
+
+    private void validarTareaRechazada(UUID revisionId, UUID tareaAprobacionId) {
+        if (tareaAprobacionId == null) {
+            throw new TransicionTareaInvalidaException(
+                "La tarea rechazada es obligatoria");
+        }
+
+        TareaAprobacion tarea = tareaRepositorio
+            .buscarDetallePorId(tareaAprobacionId)
+            .orElseThrow(() -> new TransicionTareaInvalidaException(
+                "No existe la tarea rechazada"));
+
+        if (!tarea.getRevision().getId().equals(revisionId)) {
+            throw new TransicionTareaInvalidaException(
+                "La tarea rechazada no pertenece a la revisión");
+        }
+        if (tarea.getEstado() != EstadoTareaAprobacion.RECHAZADA) {
+            throw new TransicionTareaInvalidaException(
+                "La tarea rechazada no está en estado RECHAZADA");
+        }
     }
 }
