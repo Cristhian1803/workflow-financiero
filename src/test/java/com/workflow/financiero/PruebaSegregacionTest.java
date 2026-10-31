@@ -223,6 +223,86 @@ class PruebaSegregacionTest extends PruebaIntegracionBase {
         assertThat(contarRegistros(solicitudId, "supervisor")).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("El mismo actor repite el mismo rol tras un reenvío real")
+    void mismoActorRepiteElMismoRolTrasReenvio() throws Exception {
+        JsonNode creada = crear("demo", 100_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+
+        aprobar(idTarea(solicitudId, "SUPERVISOR"), "supervisor", null)
+            .andExpect(status().isOk());
+        rechazar(idTarea(solicitudId, "GERENTE"), "gerente", "No corresponde")
+            .andExpect(status().isOk());
+
+        JsonNode respuesta = leer(reenviar(
+                solicitudId, "demo", 100_000_000, "NORMAL")
+            .andExpect(status().isCreated())
+            .andReturn());
+        String revision2 = respuesta.get("idRevision").asText();
+
+        aprobar(idTareaDeRevision(revision2, "SUPERVISOR"), "supervisor", null)
+            .andExpect(status().isOk());
+
+        assertThat(rolRegistrado(solicitudId, "supervisor"))
+            .isEqualTo("SUPERVISOR");
+        assertThat(contarRegistros(solicitudId, "supervisor")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("El mismo actor no aprueba otro rol tras un reenvío real")
+    void mismoActorNoApruebaOtroRolTrasReenvio() throws Exception {
+        JsonNode creada = crear("demo", 100_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+
+        aprobar(idTarea(solicitudId, "SUPERVISOR"), "supervisor", null)
+            .andExpect(status().isOk());
+        rechazar(idTarea(solicitudId, "GERENTE"), "gerente", "No corresponde")
+            .andExpect(status().isOk());
+
+        JsonNode respuesta = leer(reenviar(
+                solicitudId, "demo", 100_000_000, "NORMAL")
+            .andExpect(status().isCreated())
+            .andReturn());
+        String revision2 = respuesta.get("idRevision").asText();
+
+        otorgarRol("supervisor", "GERENTE");
+
+        aprobar(idTareaDeRevision(revision2, "GERENTE"), "supervisor", null)
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("SEGREGACION_FUNCIONES"));
+
+        assertThat(estadoTarea(idTareaDeRevision(revision2, "GERENTE")))
+            .isEqualTo("PENDIENTE");
+        assertThat(rolRegistrado(solicitudId, "supervisor"))
+            .isEqualTo("SUPERVISOR");
+        assertThat(contarRegistros(solicitudId, "supervisor")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Un rechazo previo no bloquea aprobar otro rol tras un reenvío")
+    void rechazoPrevioNoBloqueaOtroRolTrasReenvio() throws Exception {
+        JsonNode creada = crear("demo", 100_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+
+        rechazar(idTarea(solicitudId, "SUPERVISOR"), "supervisor", "No corresponde")
+            .andExpect(status().isOk());
+
+        JsonNode respuesta = leer(reenviar(
+                solicitudId, "demo", 100_000_000, "NORMAL")
+            .andExpect(status().isCreated())
+            .andReturn());
+        String revision2 = respuesta.get("idRevision").asText();
+
+        otorgarRol("supervisor", "GERENTE");
+
+        aprobar(idTareaDeRevision(revision2, "GERENTE"), "supervisor", null)
+            .andExpect(status().isOk());
+
+        assertThat(rolRegistrado(solicitudId, "supervisor"))
+            .isEqualTo("GERENTE");
+        assertThat(contarRegistros(solicitudId, "supervisor")).isEqualTo(1);
+    }
+
     private JsonNode crear(String usuario, long monto, String tipoOperacion)
         throws Exception {
         Map<String, Object> cuerpo = new LinkedHashMap<>();
@@ -264,6 +344,26 @@ class PruebaSegregacionTest extends PruebaIntegracionBase {
         cuerpo.put("motivo", motivo);
         return mockMvc.perform(conToken(
                 post(RUTA_TAREAS + "/" + tareaId + "/rechazar"), token(usuario))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsBytes(cuerpo)));
+    }
+
+    private ResultActions reenviar(
+        String solicitudId,
+        String usuario,
+        long monto,
+        String tipoOperacion
+    ) throws Exception {
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("tipoOperacion", tipoOperacion);
+        cuerpo.put("monto", monto);
+        cuerpo.put("moneda", "PYG");
+        cuerpo.put("descripcion", "Pago corregido");
+        cuerpo.put("justificacion", "Se ajusta el monto a la documentación");
+
+        return mockMvc.perform(conToken(
+                post(RUTA_SOLICITUDES + "/" + solicitudId + "/reenvios"),
+                token(usuario))
             .contentType(MediaType.APPLICATION_JSON)
             .content(objectMapper.writeValueAsBytes(cuerpo)));
     }

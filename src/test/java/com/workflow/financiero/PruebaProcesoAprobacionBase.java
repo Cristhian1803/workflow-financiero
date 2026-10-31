@@ -98,7 +98,7 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
         cuerpo.put("tipoOperacion", tipoOperacion);
         cuerpo.put("monto", monto);
         cuerpo.put("moneda", "PYG");
-        cuerpo.put("descripcion", "Pago de prueba I-13");
+        cuerpo.put("descripcion", "Pago de prueba");
         cuerpo.put("justificacion", "Operación autorizada para pruebas");
 
         MvcResult resultado = mockMvc.perform(conToken(
@@ -109,6 +109,26 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
             .andReturn();
 
         return leer(resultado);
+    }
+
+    ResultActions reenviar(
+        String solicitudId,
+        String usuario,
+        long monto,
+        String tipoOperacion
+    ) throws Exception {
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("tipoOperacion", tipoOperacion);
+        cuerpo.put("monto", monto);
+        cuerpo.put("moneda", "PYG");
+        cuerpo.put("descripcion", "Pago corregido");
+        cuerpo.put("justificacion", "Se ajusta el monto a la documentación");
+
+        return mockMvc.perform(conToken(
+                post(RUTA_SOLICITUDES + "/" + solicitudId + "/reenvios"),
+                token(usuario))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsBytes(cuerpo)));
     }
 
     ResultActions aprobar(
@@ -182,6 +202,24 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
             rol);
     }
 
+    String idTareaAprobacionDeRevision(String revisionId, String rol) {
+        return jdbcTemplate.queryForObject(
+            "SELECT tareapro_id::text FROM tarea_aprobacion "
+                + "WHERE tareapro_revisoli_id = ? "
+                + "AND tareapro_rol_codigo = ?",
+            String.class,
+            UUID.fromString(revisionId),
+            rol);
+    }
+
+    String identificadorProcesoDeRevision(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT revisoli_identificador_proceso FROM revision_solicitud "
+                + "WHERE revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
     String estadoTarea(String tareaId) {
         return jdbcTemplate.queryForObject(
             "SELECT tareapro_estado FROM tarea_aprobacion WHERE tareapro_id = ?",
@@ -213,6 +251,52 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
                 + "WHERE r.revisoli_solifina_id = ? "
                 + "ORDER BY t.tareapro_rol_codigo",
             String.class,
+            UUID.fromString(solicitudId));
+    }
+
+    List<String> rolesTareasNegocioDeRevision(String revisionId) {
+        return jdbcTemplate.queryForList(
+            "SELECT tareapro_rol_codigo FROM tarea_aprobacion "
+                + "WHERE tareapro_revisoli_id = ? "
+                + "ORDER BY tareapro_rol_codigo",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    List<String> estadosTareasDeRevision(String revisionId) {
+        return jdbcTemplate.queryForList(
+            "SELECT tareapro_rol_codigo || ':' || tareapro_estado "
+                + "FROM tarea_aprobacion "
+                + "WHERE tareapro_revisoli_id = ? "
+                + "ORDER BY tareapro_rol_codigo",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    List<String> tiposEventoDeRevision(String revisionId) {
+        return jdbcTemplate.queryForList(
+            "SELECT evensoli_tipo FROM evento_solicitud "
+                + "WHERE evensoli_revisoli_id = ? "
+                + "ORDER BY evensoli_creado_en, evensoli_id",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    long contarDecisionesDeRevision(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM decision_aprobacion d "
+                + "JOIN tarea_aprobacion t "
+                + "ON t.tareapro_id = d.deciapro_tareapro_id "
+                + "WHERE t.tareapro_revisoli_id = ?",
+            Long.class,
+            UUID.fromString(revisionId));
+    }
+
+    long contarRevisiones(String solicitudId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM revision_solicitud "
+                + "WHERE revisoli_solifina_id = ?",
+            Long.class,
             UUID.fromString(solicitudId));
     }
 
