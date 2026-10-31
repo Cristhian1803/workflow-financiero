@@ -9,6 +9,7 @@
 
     <message id="mensajeRiesgoEvaluado" name="RIESGO_EVALUADO"/>
     <message id="mensajeEjecucionFinalizada" name="EJECUCION_FINALIZADA"/>
+    <message id="mensajeCancelacionSolicitada" name="CANCELACION_SOLICITADA"/>
 
     <process id="aprobacionFinanciera" name="Aprobación financiera" isExecutable="true">
         <documentation>
@@ -368,6 +369,26 @@
                       targetRef="reasignarRiesgos"/>
         <sequenceFlow id="flujoFinReasignacionRiesgos" sourceRef="reasignarRiesgos"
                       targetRef="finReasignacionRiesgos"/>
+
+        <subProcess id="subprocesoCancelacion"
+                    name="Cancelación solicitada"
+                    triggeredByEvent="true">
+            <documentation>
+                Interrumpe las tareas humanas, los timers y el flujo principal
+                cuando la aplicación ya registró la cancelación y, si
+                correspondía, liberó la reserva. La compensación se orquesta
+                fuera del motor para no depender de este alcance.
+            </documentation>
+            <startEvent id="inicioCancelacion"
+                        name="Cancelación solicitada"
+                        isInterrupting="true">
+                <messageEventDefinition messageRef="mensajeCancelacionSolicitada"/>
+            </startEvent>
+            <endEvent id="finCancelacion" name="Fin por cancelación"/>
+            <sequenceFlow id="flujoCancelacion"
+                          sourceRef="inicioCancelacion"
+                          targetRef="finCancelacion"/>
+        </subProcess>
     </process>
 
     <bpmndi:BPMNDiagram id="BPMNDiagram_aprobacionFinanciera">
@@ -726,6 +747,25 @@
             <bpmndi:BPMNEdge id="flujoFinReasignacionRiesgos_di" bpmnElement="flujoFinReasignacionRiesgos">
                 <omgdi:waypoint x="1180" y="900"/>
                 <omgdi:waypoint x="1198" y="930"/>
+            </bpmndi:BPMNEdge>
+
+            <bpmndi:BPMNShape id="subprocesoCancelacion_di"
+                              bpmnElement="subprocesoCancelacion"
+                              isExpanded="true">
+                <omgdc:Bounds x="120" y="1140" width="420" height="160"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="inicioCancelacion_di"
+                              bpmnElement="inicioCancelacion">
+                <omgdc:Bounds x="170" y="1202" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="finCancelacion_di"
+                              bpmnElement="finCancelacion">
+                <omgdc:Bounds x="450" y="1202" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNEdge id="flujoCancelacion_di"
+                             bpmnElement="flujoCancelacion">
+                <omgdi:waypoint x="206" y="1220"/>
+                <omgdi:waypoint x="450" y="1220"/>
             </bpmndi:BPMNEdge>
 
         </bpmndi:BPMNPlane>
