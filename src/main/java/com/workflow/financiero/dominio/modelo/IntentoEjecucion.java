@@ -174,7 +174,8 @@ public class IntentoEjecucion {
         String referenciaExterna
     ) {
         if (estado != EstadoIntentoEjecucion.ENVIANDO
-            && estado != EstadoIntentoEjecucion.RESULTADO_DESCONOCIDO) {
+            && estado != EstadoIntentoEjecucion.RESULTADO_DESCONOCIDO
+            && estado != EstadoIntentoEjecucion.COMPENSANDO) {
             throw new IllegalStateException(
                 "La intención no está en envío: " + estado);
         }
@@ -251,7 +252,9 @@ public class IntentoEjecucion {
      * La clave de liberación es estable y se deriva de la revisión.
      */
     public void marcarCompensando(Usuario actor, String motivo) {
-        if (estado != EstadoIntentoEjecucion.FALLIDA) {
+        if (estado != EstadoIntentoEjecucion.FALLIDA
+            && estado != EstadoIntentoEjecucion.ENVIANDO
+            && estado != EstadoIntentoEjecucion.RESULTADO_DESCONOCIDO) {
             throw new IllegalStateException(
                 "La intención no se puede compensar: " + estado);
         }

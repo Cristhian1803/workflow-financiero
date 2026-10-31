@@ -43,7 +43,9 @@ public enum EstadoRevision {
             case RESULTADO_DESCONOCIDO -> destino == EJECUTADA
                 || destino == COMPENSANDO
                 || destino == REVISION_MANUAL;
-            case COMPENSANDO -> destino == CANCELADA || destino == REVISION_MANUAL;
+            case COMPENSANDO -> destino == CANCELADA
+                || destino == EJECUTADA
+                || destino == REVISION_MANUAL;
             case REVISION_MANUAL -> destino == EVALUANDO_RIESGO;
             case RECHAZADA, CANCELADA, EJECUTADA -> false;
         };
