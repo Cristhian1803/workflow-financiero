@@ -71,6 +71,12 @@ public class ConfiguracionSeguridad {
                     HttpMethod.POST,
                     "/api/v1/autenticacion/iniciar-sesion"
                 ).permitAll();
+                // La notificación externa se autentica con su propia firma
+                // HMAC, no con el token de un usuario.
+                autorizacion.requestMatchers(
+                    HttpMethod.POST,
+                    "/api/v1/integraciones/riesgos/notificacion"
+                ).permitAll();
 
                 if (documentacionPublica) {
                     autorizacion.requestMatchers(

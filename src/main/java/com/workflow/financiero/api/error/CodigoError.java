@@ -27,6 +27,14 @@ public enum CodigoError {
     REINTENTO_NO_PERMITIDO(HttpStatus.CONFLICT, "Reintento no permitido"),
     EJECUCION_NO_PERMITIDA(HttpStatus.CONFLICT, "Ejecución no permitida"),
     CANCELACION_NO_PERMITIDA(HttpStatus.CONFLICT, "Cancelación no permitida"),
+    EVENTO_EXTERNO_INVALIDO(
+        HttpStatus.BAD_REQUEST,
+        "Evento externo inválido"
+    ),
+    EVENTO_EXTERNO_EN_CONFLICTO(
+        HttpStatus.CONFLICT,
+        "Evento externo en conflicto"
+    ),
     REENVIO_NO_PERMITIDO(HttpStatus.UNPROCESSABLE_ENTITY, "Reenvío no permitido"),
     SERVICIO_NO_DISPONIBLE(
         HttpStatus.SERVICE_UNAVAILABLE,

@@ -7,6 +7,8 @@ import com.workflow.financiero.dominio.excepcion.AprobacionNoPermitidaException;
 import com.workflow.financiero.dominio.excepcion.CancelacionNoPermitidaException;
 import com.workflow.financiero.dominio.excepcion.DecisionInvalidaException;
 import com.workflow.financiero.dominio.excepcion.EjecucionNoPermitidaException;
+import com.workflow.financiero.dominio.excepcion.EventoExternoEnConflictoException;
+import com.workflow.financiero.dominio.excepcion.EventoExternoInvalidoException;
 import com.workflow.financiero.dominio.excepcion.IncidenteNoEncontradoException;
 import com.workflow.financiero.dominio.excepcion.ReenvioNoPermitidoException;
 import com.workflow.financiero.dominio.excepcion.ReintentoNoPermitidoException;
@@ -274,6 +276,30 @@ public class ManejadorErroresApi {
     ) {
         return respuesta(
             CodigoError.CANCELACION_NO_PERMITIDA,
+            excepcion.getMessage(),
+            peticion
+        );
+    }
+
+    @ExceptionHandler(EventoExternoInvalidoException.class)
+    ResponseEntity<ProblemDetail> eventoExternoInvalido(
+        EventoExternoInvalidoException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.EVENTO_EXTERNO_INVALIDO,
+            excepcion.getMessage(),
+            peticion
+        );
+    }
+
+    @ExceptionHandler(EventoExternoEnConflictoException.class)
+    ResponseEntity<ProblemDetail> eventoExternoEnConflicto(
+        EventoExternoEnConflictoException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.EVENTO_EXTERNO_EN_CONFLICTO,
             excepcion.getMessage(),
             peticion
         );
