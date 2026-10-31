@@ -77,8 +77,11 @@ subproceso solo detiene el flujo.
 - Si el proceso ya terminó, la cancelación no vuelve a intervenir en el motor.
 
 La cancelación no se declara antes de liberar la reserva. Si la liberación falla o el
-resultado es incierto, la revisión queda `COMPENSANDO` y la recuperación se completa en
-la siguiente iteración.
+resultado es incierto, la revisión queda `COMPENSANDO`, el proceso sigue activo y el
+trabajador de compensación consulta o reintenta con la misma clave. El mensaje
+`CANCELACION_SOLICITADA` se envía recién cuando la liberación queda confirmada. Si la
+confirmación de ejecución gana la carrera, la revisión pasa a `EJECUTADA`, la
+compensación se rechaza y el proceso cierra por el flujo de ejecución.
 
 Cada tarea humana tiene dos temporizadores de frontera no interruptores:
 

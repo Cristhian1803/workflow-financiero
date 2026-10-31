@@ -377,7 +377,7 @@ Si el proveedor confirma pero la respuesta se pierde, o si hay un timeout despu�
 - Un error definitivo se registra como `FALLIDA` en la intención y permite un reintento manual seguro.
 - Un conflicto de clave o huella no se reintenta: el incidente queda marcado como no reintentable.
 
-La tabla `incidente` guarda tipo, referencia, estado, motivo, actor, reintentos y último resultado. Los incidentes de ejecución se consultan y reintentan con:
+La tabla `incidente` guarda tipo, referencia, estado, motivo, actor, reintentos y último resultado. Los incidentes de ejecución y compensación se consultan y reintentan con:
 
 ```text
 GET  /api/v1/incidentes
@@ -405,15 +405,18 @@ Invoke-RestMethod `
   -Body '{"motivo":"El solicitante desiste de la operacion"}'
 ```
 
-- Sin reserva: se cancelan las tareas pendientes, la revisión pasa a `CANCELADA` y el proceso termina por el subproceso de cancelación.
+- Sin reserva ni despacho en curso: se cancelan las tareas pendientes, la revisión pasa a `CANCELADA` y el proceso termina por el subproceso de cancelación.
 - Con reserva y confirmación no despachada: la revisión pasa por `COMPENSANDO`, se libera la reserva con la clave estable `liberacion:{solicitudId}:{revisionId}` y solo después de la liberación confirmada pasa a `CANCELADA`.
 - Después de una confirmación efectiva: se rechaza con `409`; no se libera nada y la revisión conserva `EJECUTADA`.
-- Si la confirmación está en tránsito o su resultado es desconocido, esta etapa no declara la cancelación: responde `409` y el caso queda para la reconciliación de la siguiente iteración.
-- Si la liberación falla o no se confirma, la revisión queda `COMPENSANDO` y la respuesta es `202`. La recuperación de ese caso corresponde a la siguiente iteración.
+- Si la confirmación está en tránsito o su resultado es desconocido, no se libera ni se declara `CANCELADA`: responde `202` y la cancelación queda pendiente de reconciliación.
+- Si la liberación falla o su respuesta se pierde, se consulta o reintenta con la misma clave. Un fallo transitorio se agenda; al agotar los intentos se abre un incidente de compensación y la revisión sigue `COMPENSANDO`.
+- Un incidente de compensación se reintenta con `POST /api/v1/incidentes/{id}/reintentar` por `OPERACIONES` o `ADMINISTRADOR`. El reintento conserva clave y huella y registra actor y motivo.
 
-La tabla `intento_ejecucion` conserva el motivo, el actor, la fecha de solicitud y la referencia de liberación. La confirmación efectiva del proveedor es el punto irreversible: nunca se declara `CANCELADA` antes de liberar una reserva.
+La tabla `intento_compensacion` conserva el estado durable de la cancelación (`PENDIENTE`, `LIBERANDO`, `LIBERADA`, `CANCELADA`, `RECHAZADA`, `FALLIDA`, `REVISION_MANUAL`), el actor, el motivo, los intentos, la próxima ejecución y la referencia de liberación. La tabla `intento_ejecucion` conserva el resumen financiero. La confirmación efectiva del proveedor es el punto irreversible: nunca se declara `CANCELADA` antes de liberar una reserva.
 
-Limitaciones de esta etapa: la compensación incierta, la liberación fallida con reintentos y la carrera contra el despacho se completan en la siguiente iteración. El riesgo externo real y `REVISION_MANUAL` quedan para etapas posteriores.
+La carrera contra el despacho se resuelve con las mismas claves estables y la idempotencia del proveedor: si la confirmación gana, la liberación falla y la revisión queda `EJECUTADA`; si la liberación gana, la confirmación falla y la revisión queda `CANCELADA`. El trabajador de compensación retoma las intenciones `PENDIENTE` y las liberaciones `LIBERANDO` que quedaron interrumpidas por un reinicio.
+
+El riesgo externo real y la revisión manual de riesgo quedan para etapas posteriores.
 
 ### Reenvío
 
@@ -447,9 +450,9 @@ No es la API final de solicitudes.
 - Un token sigue válido hasta su vencimiento; el usuario se revalida como activo en cada consulta, pero los roles del token no cambian hasta que vence.
 - Los roles del token no cambian hasta que vence; `/autenticacion/yo` muestra los roles actuales de la base.
 - El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
-- La API no cancela solicitudes ni ejecuta operaciones financieras reales. El reenvío está disponible solo para el dueño y con las reglas de la sección de reenvío.
-- Las rutas combinadas, el paralelismo, el rechazo, el reenvío y la recuperación de ejecuciones inciertas están implementados. La integración real de riesgo externo, la cancelación y la compensación quedan para futuras etapas.
-- El incidente de ejecución no usa `REVISION_MANUAL` para no bloquear el reintento seguro; la intervención se realiza desde la API de incidentes.
+- La API cancela solicitudes y usa un proveedor financiero simulado; no ejecuta operaciones financieras reales. El reenvío está disponible solo para el dueño y con las reglas de la sección de reenvío.
+- Las rutas combinadas, el paralelismo, el rechazo, el reenvío, la cancelación, la compensación y la recuperación de ejecuciones inciertas están implementados. La integración real de riesgo externo queda para una etapa posterior.
+- El incidente de ejecución no usa `REVISION_MANUAL` para no bloquear el reintento seguro; la intervención se realiza desde la API de incidentes. La compensación usa `REVISION_MANUAL` como estado de su propia intención, no como estado de la revisión.
 - La notificación de 24 horas y la reasignación de 48 horas están implementadas. No hay reasignación manual por administrador ni notificación por correo.
 - No se implementó marcar notificaciones como leídas.
 - Si el superior elegido es el creador, la tarea queda asignada a una persona que no puede aprobarla; la recuperación operativa es de una etapa posterior.

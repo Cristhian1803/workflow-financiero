@@ -143,7 +143,7 @@ Traducción de errores:
 | Respuesta `2xx` inválida | `ErrorDefinitivoProveedorFinancieroException` |
 
 El adaptador no reintenta automáticamente. La política de reintentos y
-reconciliación pertenece al trabajador de ejecución.
+reconciliación pertenece a los trabajadores de ejecución y compensación.
 
 ## Uso desde la aplicación
 
@@ -180,18 +180,29 @@ no disponible y liberación fallida. El control exige la cabecera
 
 La cancelación usa la acción `LIBERACION` con la clave estable
 `liberacion:{solicitudId}:{revisionId}` y la huella calculada para esa acción.
-La aplicación consulta primero la reserva:
+La aplicación consulta primero la confirmación y después la reserva:
 
-- si no existe, no hay efecto que compensar;
+- si la confirmación existe y está `CONFIRMADA`, la ejecución es irreversible y
+  no se libera;
+- si la reserva no existe, no hay efecto que compensar;
 - si está `RESERVADA`, llama a `liberar`;
 - si está `LIBERADA`, reutiliza el resultado idempotente;
-- si está `CONFIRMADA`, la ejecución es irreversible y no se libera.
+- si está `CONFIRMADA` sin confirmación registrada, hay una inconsistencia y se
+  deriva a intervención manual.
 
 La liberación solo se considera confirmada cuando el proveedor devuelve
 `LIBERADA`, la clave y la huella coinciden y la referencia queda registrada. Si
-la liberación falla o su respuesta se pierde, la revisión queda `COMPENSANDO` y
-la recuperación se completa en la siguiente iteración. No se declara `CANCELADA`
-antes de esa confirmación.
+la liberación falla o su respuesta se pierde, se consulta la misma clave de
+liberación; si el efecto existe, se registra `CANCELADA`. Si no se puede
+confirmar, se agenda un reintento con la misma clave y la revisión permanece
+`COMPENSANDO`. Al agotar los intentos se abre un incidente de compensación y se
+puede reintentar manualmente desde `/api/v1/incidentes/{id}/reintentar`.
+
+La confirmación y la liberación compiten sobre la misma reserva. El proveedor
+serializa ambas operaciones: si la confirmación gana, la liberación falla y la
+revisión queda `EJECUTADA`; si la liberación gana, la confirmación falla y la
+revisión queda `CANCELADA`. La aplicación nunca declara `CANCELADA` antes de
+liberar una reserva ni libera una reserva con confirmación efectiva.
 
 ## Configuración
 
