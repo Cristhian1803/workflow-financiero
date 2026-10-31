@@ -43,6 +43,7 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         tablas.put("evento_externo", "evenexte");
         tablas.put("notificacion", "noti");
         tablas.put("registro_idempotencia", "regiidem");
+        tablas.put("operacion_simulada", "opersimu");
 
         tablas.forEach((tabla, prefijo) -> {
             List<String> columnas = columnas(tabla);
@@ -125,7 +126,13 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new Restriccion("ck_evaluacion_origen", "c"),
             new Restriccion("ck_evaluacion_nivel", "c"),
             new Restriccion("ck_notificacion_estado", "c"),
-            new Restriccion("ck_notificacion_destinatario", "c")
+            new Restriccion("ck_notificacion_destinatario", "c"),
+            new Restriccion("pk_operacion_simulada", "p"),
+            new Restriccion("uq_operacion_simulada_clave", "u"),
+            new Restriccion("uq_operacion_simulada_intencion_accion", "u"),
+            new Restriccion("ck_operacion_simulada_accion", "c"),
+            new Restriccion("ck_operacion_simulada_estado", "c"),
+            new Restriccion("ck_operacion_simulada_monto", "c")
         );
 
         restricciones.forEach(restriccion -> {
@@ -198,7 +205,9 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"notificacion", "noti_creado_en"},
             new String[] {"notificacion", "noti_leida_en"},
             new String[] {"registro_idempotencia", "regiidem_expira_en"},
-            new String[] {"registro_idempotencia", "regiidem_creado_en"}
+            new String[] {"registro_idempotencia", "regiidem_creado_en"},
+            new String[] {"operacion_simulada", "opersimu_creado_en"},
+            new String[] {"operacion_simulada", "opersimu_actualizado_en"}
         );
 
         instantes.forEach(par -> assertThat(tipoColumna(par[0], par[1]))
@@ -218,6 +227,23 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             "SELECT numeric_scale FROM information_schema.columns "
                 + "WHERE table_schema = ? AND table_name = 'revision_solicitud' "
                 + "AND column_name = 'revisoli_monto'",
+            Integer.class,
+            ESQUEMA
+        )).isZero();
+
+        assertThat(tipoColumna("operacion_simulada", "opersimu_monto"))
+            .isEqualTo("numeric");
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT numeric_precision FROM information_schema.columns "
+                + "WHERE table_schema = ? AND table_name = 'operacion_simulada' "
+                + "AND column_name = 'opersimu_monto'",
+            Integer.class,
+            ESQUEMA
+        )).isEqualTo(19);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT numeric_scale FROM information_schema.columns "
+                + "WHERE table_schema = ? AND table_name = 'operacion_simulada' "
+                + "AND column_name = 'opersimu_monto'",
             Integer.class,
             ESQUEMA
         )).isZero();
@@ -263,7 +289,8 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"notificacion", "noti_destinatario_rol_codigo"},
             new String[] {"notificacion", "noti_leida_en"},
             new String[] {"registro_idempotencia", "regiidem_codigo_respuesta"},
-            new String[] {"registro_idempotencia", "regiidem_cuerpo_respuesta"}
+            new String[] {"registro_idempotencia", "regiidem_cuerpo_respuesta"},
+            new String[] {"operacion_simulada", "opersimu_actualizado_en"}
         );
 
         opcionales.forEach(par -> assertThat(esNullable(par[0], par[1]))
@@ -277,6 +304,8 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         assertThat(esNullable("evento_externo", "evenexte_proveedor")).isFalse();
         assertThat(esNullable("notificacion", "noti_tipo")).isFalse();
         assertThat(esNullable("registro_idempotencia", "regiidem_clave")).isFalse();
+        assertThat(esNullable("operacion_simulada", "opersimu_clave")).isFalse();
+        assertThat(esNullable("operacion_simulada", "opersimu_monto")).isFalse();
     }
 
     @Test
@@ -295,7 +324,8 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             "idx_notificacion_rol",
             "idx_notificacion_estado",
             "idx_idempotencia_expira",
-            "uq_revision_proceso"
+            "uq_revision_proceso",
+            "idx_operacion_simulada_intencion"
         );
 
         indices.forEach(indice -> assertThat(contarIndice(indice))
@@ -344,6 +374,16 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             .contains("PENDIENTE", "LEIDA");
         assertThat(definicionRestriccion("ck_notificacion_destinatario"))
             .contains("noti_destinatario_usua_id", "noti_destinatario_rol_codigo", "OR");
+        assertThat(definicionRestriccion("ck_operacion_simulada_accion"))
+            .contains("RESERVA", "CONFIRMACION", "LIBERACION");
+        assertThat(definicionRestriccion("ck_operacion_simulada_estado"))
+            .contains("RESERVADA", "CONFIRMADA", "LIBERADA");
+    }
+
+    @Test
+    @DisplayName("El simulador no depende de FKs de las tablas de negocio")
+    void simuladorNoTieneFksDeNegocio() {
+        assertThat(contarFks("operacion_simulada")).isZero();
     }
 
     @Test
@@ -424,6 +464,15 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         return jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM pg_constraint "
                 + "WHERE conrelid = to_regclass(?) AND contype = 'c'",
+            Long.class,
+            tabla
+        );
+    }
+
+    private Long contarFks(String tabla) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM pg_constraint "
+                + "WHERE conrelid = to_regclass(?) AND contype = 'f'",
             Long.class,
             tabla
         );
