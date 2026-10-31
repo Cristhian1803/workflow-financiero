@@ -34,6 +34,17 @@ final class VariablesProceso {
         return valor == null ? null : valor.toString();
     }
 
+    static Boolean booleano(DelegateExecution ejecucion, String nombre) {
+        Object valor = ejecucion.getVariable(nombre);
+        if (valor == null) {
+            return null;
+        }
+        if (valor instanceof Boolean resultado) {
+            return resultado;
+        }
+        return Boolean.parseBoolean(valor.toString());
+    }
+
     static Collection<String> listaTexto(DelegateExecution ejecucion, String nombre) {
         Object valor = ejecucion.getVariable(nombre);
         if (valor == null) {

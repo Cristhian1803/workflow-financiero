@@ -10,6 +10,7 @@ import org.flowable.engine.HistoryService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
 import org.flowable.engine.history.HistoricProcessInstance;
+import org.flowable.engine.runtime.Execution;
 import org.flowable.engine.runtime.ProcessInstance;
 import org.flowable.identitylink.api.IdentityLink;
 import org.flowable.identitylink.api.IdentityLinkType;
@@ -119,9 +120,26 @@ public class AdaptadorProcesoFlowable implements PuertoProceso {
         String idProceso,
         Map<String, Object> variables
     ) {
+        if (idProceso == null || idProceso.isBlank()) {
+            throw new IllegalArgumentException(
+                "El proceso es obligatorio para enviar el mensaje");
+        }
+
+        // El mensaje se correlaciona con la ejecución que tiene la suscripción,
+        // no con el identificador de la instancia del proceso.
+        Execution ejecucion = runtimeService.createExecutionQuery()
+            .processInstanceId(idProceso)
+            .messageEventSubscriptionName(nombreMensaje)
+            .singleResult();
+        if (ejecucion == null) {
+            throw new IllegalStateException(
+                "El proceso " + idProceso + " no espera el mensaje "
+                    + nombreMensaje);
+        }
+
         runtimeService.messageEventReceived(
             nombreMensaje,
-            idProceso,
+            ejecucion.getId(),
             variables == null ? Map.of() : variables
         );
     }
