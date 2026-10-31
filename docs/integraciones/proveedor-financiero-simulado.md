@@ -137,8 +137,9 @@ Traducción de errores:
 | Respuesta | Excepción |
 |---|---|
 | `409` | `ConflictoProveedorFinancieroException` |
+| `404` en consulta | `OperacionNoEncontradaProveedorFinancieroException` |
 | `5xx`, timeout o conexión | `ErrorRecuperableProveedorFinancieroException` |
-| `4xx` | `ErrorDefinitivoProveedorFinancieroException` |
+| Otros `4xx` | `ErrorDefinitivoProveedorFinancieroException` |
 | Respuesta `2xx` inválida | `ErrorDefinitivoProveedorFinancieroException` |
 
 El adaptador no reintenta automáticamente. La política de reintentos y
@@ -153,8 +154,27 @@ estables y registra el resultado en otra transacción corta.
 
 La reserva y la confirmación se envían con la misma identidad y los mismos
 parámetros. Si el trabajador se reinicia después de reclamar, la intención queda
-`ENVIANDO`; la reconciliación y los incidentes se implementan en la sesión
-siguiente. No se cambia la clave ni la huella para reintentar.
+`ENVIANDO` y el trabajador de recuperación la retoma después del plazo de
+reclamación. No se cambia la clave ni la huella para reintentar.
+
+Ante una respuesta perdida o un timeout, la intención pasa a
+`RESULTADO_DESCONOCIDO` y se consulta la operación con la misma clave. La consulta
+permite distinguir tres casos:
+
+- la confirmación existe y la huella coincide: se registra `CONFIRMADA`;
+- la operación no existe: se puede reintentar la acción de forma segura;
+- la consulta no está disponible o devuelve un conflicto: se crea un incidente y
+  no se repite la confirmación a ciegas.
+
+El adaptador traduce un `404` de consulta a
+`OperacionNoEncontradaProveedorFinancieroException`, que la recuperación
+interpreta como ausencia de efecto. Un `409` sigue siendo un conflicto definitivo
+y no se reintenta automáticamente.
+
+El simulador permite forzar fallos controlados en `pruebas`: error antes del
+efecto, error definitivo, conflicto de idempotencia, respuesta perdida y consulta
+no disponible. El control exige la cabecera `X-Clave-Integracion` y solo existe
+en ese perfil.
 
 ## Configuración
 

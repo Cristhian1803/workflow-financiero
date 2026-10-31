@@ -36,8 +36,11 @@ Cada rama tiene su propia variable de decisión: `decisionSupervisor`, `decision
 9. Marca la revisión como `APROBADA`, persiste la intención de ejecución y la deja
    en `EJECUTANDO`. El proceso espera el mensaje `EJECUCION_FINALIZADA`.
 10. El trabajador de ejecución reclama la intención, reserva y confirma contra el
-    proveedor simulado fuera de la transacción y envía el resultado. El proceso
-    marca `EJECUTADA` y termina.
+    proveedor simulado fuera de la transacción y envía el resultado. La compuerta
+    `decidirResultadoEjecucion` distingue el resultado confirmado del desconocido:
+    - `CONFIRMADA` pasa por `marcarEjecutada` y termina en `finProceso`;
+    - el flujo por defecto pasa por `marcarResultadoDesconocido` y termina en
+      `finResultadoDesconocido`.
 
 La espera externa se ubica después de la unión para que las tareas puedan abrirse y
 resolverse sin depender del proveedor. La integración real, los duplicados y los eventos
@@ -47,6 +50,13 @@ La espera de ejecución no llama al proveedor: el delegate solo persiste la inte
 transiciona la revisión. El trabajador de aplicación hace la llamada externa y luego
 envía `EJECUCION_FINALIZADA`. Si el trabajador está deshabilitado, la revisión queda en
 `EJECUTANDO` con la intención `PENDIENTE`; al reiniciar, el trabajador la retoma.
+
+Cuando el resultado es incierto, el trabajador persiste `RESULTADO_DESCONOCIDO`, crea un
+incidente y consulta al proveedor con la misma clave antes de cerrar el proceso. Si la
+consulta confirma, el mensaje enviado es `CONFIRMADA` y el proceso termina en
+`finProceso`. Si no se puede resolver, el proceso termina en `finResultadoDesconocido` y
+el incidente queda abierto para el reintento operativo. La recuperación posterior puede
+actualizar la revisión a `EJECUTADA` directamente si el proceso ya terminó.
 
 Cada tarea humana tiene dos temporizadores de frontera no interruptores:
 
@@ -110,4 +120,5 @@ las ramas restantes. El reenvío no modifica el BPMN: crea una revisión y una i
 conserva la anterior con su historial. El temporizador de 24 horas crea una notificación
 persistida y consultable por el rol destinatario; el de 48 horas reasigna la tarea al superior
 configurado y permite resolverla por delegación. El paralelismo completo, la espera de riesgo
-externo y la ejecución idempotente simulada están probados en el proceso real.
+externo, la ejecución idempotente simulada y el cierre por resultado desconocido están probados
+en el proceso real.

@@ -78,6 +78,14 @@ El trabajador de ejecución se activa en `desarrollo`. Se puede desactivar para 
 $env:EJECUCION_TRABAJADOR_HABILITADO="false"
 ```
 
+Parámetros de recuperación:
+
+```powershell
+$env:EJECUCION_TRABAJADOR_MAX_INTENTOS="3"
+$env:EJECUCION_TRABAJADOR_RECLAMACION_VENCIDA="PT30S"
+$env:EJECUCION_TRABAJADOR_REINTENTO_ESPERA="PT5S"
+```
+
 El sembrador de usuarios demo corre al final del arranque. Si el primer login devuelve `401`, esperar un instante y reintentar.
 
 Punto de salud:
@@ -171,6 +179,8 @@ La creación requiere el rol `SOLICITANTE` e inicia el proceso BPMN. Si el plan 
 | `POST` | `/api/v1/tareas-aprobacion/{id}/aprobar` | Actor elegible |
 | `POST` | `/api/v1/tareas-aprobacion/{id}/rechazar` | Actor elegible |
 | `GET` | `/api/v1/notificaciones` | Autenticado |
+| `GET` | `/api/v1/incidentes` | `OPERACIONES` o `ADMINISTRADOR` |
+| `POST` | `/api/v1/incidentes/{id}/reintentar` | `OPERACIONES` o `ADMINISTRADOR` |
 
 ### Crear
 
@@ -276,7 +286,7 @@ Si una tarea sigue pendiente al cumplirse el plazo de reasignación, se asigna a
 
 El nuevo asignado recibe una notificación `REASIGNACION_48H` y puede resolver la tarea por delegación. La decisión conserva el rol funcional original y devuelve `delegado=true`. La bandeja muestra la tarea asignada al delegado y deja de mostrarla a los demás usuarios del rol.
 
-Si no hay un superior activo, la tarea sigue pendiente y sin asignado. Se registra el evento `REASIGNACION_FALLIDA` y se crea una notificación para el rol `ADMINISTRADOR`. El creador de la solicitud no puede aprobar aunque quede como superior asignado. La recuperación operativa y la API de incidentes son de una etapa posterior.
+Si no hay un superior activo, la tarea sigue pendiente y sin asignado. Se registra el evento `REASIGNACION_FALLIDA` y se crea una notificación para el rol `ADMINISTRADOR`. El creador de la solicitud no puede aprobar aunque quede como superior asignado. La recuperación operativa de una reasignación fallida queda para una etapa posterior; la API de incidentes de ejecución ya está disponible.
 
 La notificación de 24 horas no se crea si la tarea ya fue reasignada. La aprobación antes del vencimiento tampoco genera una reasignación tardía.
 
@@ -356,7 +366,26 @@ La confirmación es el punto irreversible. Una reserva confirmada no se puede li
 
 Si el trabajador está deshabilitado, la revisión queda en `EJECUTANDO` con la intención `PENDIENTE`. Al reiniciar con `EJECUCION_TRABAJADOR_HABILITADO=true`, el trabajador retoma la intención y el proceso termina en `EJECUTADA`.
 
-Limitaciones de esta etapa: no se implementaron todavía la reconciliación de resultado desconocido, los incidentes, la cancelación ni la compensación. Un fallo del trabajador deja la intención en `ENVIANDO` para la sesión siguiente.
+## Recuperación e incidentes
+
+Si el proveedor confirma pero la respuesta se pierde, o si hay un timeout después del despacho, la intención queda en `RESULTADO_DESCONOCIDO`. La aplicación consulta al proveedor con la misma clave y la misma huella; nunca cambia la identidad financiera ni repite la confirmación a ciegas.
+
+- Si la consulta confirma el efecto, la revisión pasa a `EJECUTADA` y el incidente se resuelve.
+- Si la consulta no está disponible, el incidente queda `ABIERTO` y se programan reintentos limitados.
+- Si se agotan los intentos, el proceso cierra en `RESULTADO_DESCONOCIDO` y el incidente queda para intervención operativa.
+- Un error definitivo se registra como `FALLIDA` en la intención y permite un reintento manual seguro.
+- Un conflicto de clave o huella no se reintenta: el incidente queda marcado como no reintentable.
+
+La tabla `incidente` guarda tipo, referencia, estado, motivo, actor, reintentos y último resultado. Los incidentes de ejecución se consultan y reintentan con:
+
+```text
+GET  /api/v1/incidentes
+POST /api/v1/incidentes/{id}/reintentar
+```
+
+El reintento exige `OPERACIONES` o `ADMINISTRADOR`, revalida la autorización y la revisión actual, conserva la clave y la huella, registra actor y motivo y no crea una segunda intención. Responde `200` si resuelve, `202` si el resultado sigue incierto y `409` si el incidente no admite un reintento seguro.
+
+Limitaciones de esta etapa: no se implementaron todavía la cancelación, la compensación ni el riesgo externo real. `REVISION_MANUAL` queda reservado para la revisión manual de riesgo de una etapa posterior.
 
 ### Reenvío
 
@@ -391,7 +420,8 @@ No es la API final de solicitudes.
 - Los roles del token no cambian hasta que vence; `/autenticacion/yo` muestra los roles actuales de la base.
 - El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
 - La API no cancela solicitudes ni ejecuta operaciones financieras reales. El reenvío está disponible solo para el dueño y con las reglas de la sección de reenvío.
-- Las rutas combinadas, el paralelismo, el rechazo y el reenvío están implementados. La integración real de riesgo externo, la cancelación y la compensación quedan para futuras etapas.
+- Las rutas combinadas, el paralelismo, el rechazo, el reenvío y la recuperación de ejecuciones inciertas están implementados. La integración real de riesgo externo, la cancelación y la compensación quedan para futuras etapas.
+- El incidente de ejecución no usa `REVISION_MANUAL` para no bloquear el reintento seguro; la intervención se realiza desde la API de incidentes.
 - La notificación de 24 horas y la reasignación de 48 horas están implementadas. No hay reasignación manual por administrador ni notificación por correo.
 - No se implementó marcar notificaciones como leídas.
 - Si el superior elegido es el creador, la tarea queda asignada a una persona que no puede aprobarla; la recuperación operativa es de una etapa posterior.
