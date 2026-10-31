@@ -102,8 +102,8 @@
         <serviceTask id="verificarRiesgoExterno" name="Verificar riesgo externo"
                      flowable:delegateExpression="${delegadoVerificarRiesgoExterno}">
             <documentation>
-                Valida el resultado externo recibido antes de permitir el avance. En esta
-                etapa se usa un fixture controlado.
+                Valida la evaluación externa persistida y el evento aplicado antes de
+                permitir el avance. El resultado se recibe por el inbox firmado.
             </documentation>
         </serviceTask>
 

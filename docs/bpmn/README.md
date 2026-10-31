@@ -29,10 +29,12 @@ Cada rama tiene su propia variable de decisión: `decisionSupervisor`, `decision
 6. Cada tarea humana puede aprobar o rechazar. Un rechazo pasa por `registrarRechazo` y
    termina la instancia con `terminateAll=true`.
 7. Las aprobaciones se unen en una compuerta inclusiva y luego se verifica la autorización.
-8. Si el monto requiere evaluación externa, espera el mensaje `RIESGO_EVALUADO`. El fixture
-   de pruebas envía `riesgoExternoResuelto=true` y `nivelRiesgoExterno`; el delegate registra
-   `EVALUACION_EXTERNA_RESUELTA` y solo entonces permite continuar. El nivel externo no puede
-   ser menor que el riesgo interno.
+8. Si el monto requiere evaluación externa, espera el mensaje `RIESGO_EVALUADO`. La
+   aplicación guarda el evento firmado en el inbox, consolida el máximo entre riesgo interno
+   y externo y envía el mensaje a la instancia específica. El delegate lee la evaluación
+   persistida, verifica el evento aplicado y solo entonces permite continuar. Un evento
+   temprano queda pendiente y se reintenta; uno de una revisión anterior o terminal queda
+   obsoleto. El evento no crea ni modifica aprobaciones.
 9. Marca la revisión como `APROBADA`, persiste la intención de ejecución y la deja
    en `EJECUTANDO`. El proceso espera el mensaje `EJECUCION_FINALIZADA`.
 10. El trabajador de ejecución reclama la intención, reserva y confirma contra el
@@ -47,8 +49,9 @@ Cada rama tiene su propia variable de decisión: `decisionSupervisor`, `decision
     flujo principal y termina en `finCancelacion`.
 
 La espera externa se ubica después de la unión para que las tareas puedan abrirse y
-resolverse sin depender del proveedor. La integración real, los duplicados y los eventos
-tardíos son de etapas próximas.
+resolverse sin depender del proveedor. La integración simulada, los duplicados, los
+conflictos y los eventos tempranos están implementados. El vencimiento y la revisión
+manual son de una etapa futura.
 
 La espera de ejecución no llama al proveedor: el delegate solo persiste la intención y
 transiciona la revisión. El trabajador de aplicación hace la llamada externa y luego

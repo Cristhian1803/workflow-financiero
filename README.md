@@ -70,6 +70,7 @@ La aplicación lee `.env` automáticamente. Como alternativa se pueden definir l
 ```powershell
 $env:JWT_SECRETO="<secreto de al menos 32 bytes>"
 $env:PROVEEDOR_FINANCIERO_SECRETO="<secreto de integración>"
+$env:RIESGO_EXTERNO_SECRETO="<secreto de la firma de riesgo>"
 ```
 
 El trabajador de ejecución se activa en `desarrollo`. Se puede desactivar para inspeccionar una intención pendiente:
@@ -84,6 +85,9 @@ Parámetros de recuperación:
 $env:EJECUCION_TRABAJADOR_MAX_INTENTOS="3"
 $env:EJECUCION_TRABAJADOR_RECLAMACION_VENCIDA="PT30S"
 $env:EJECUCION_TRABAJADOR_REINTENTO_ESPERA="PT5S"
+$env:RIESGO_EXTERNO_VENTANA_TIEMPO="PT5M"
+$env:RIESGO_EXTERNO_REINTENTO="PT5S"
+$env:RIESGO_EXTERNO_MAXIMO_INTENTOS="3"
 ```
 
 El sembrador de usuarios demo corre al final del arranque. Si el primer login devuelve `401`, esperar un instante y reintentar.
@@ -350,7 +354,7 @@ El proceso activa solo las ramas del plan:
 | Hasta 200 millones | Alto | `SUPERVISOR`, `GERENTE`, `RIESGOS` |
 | Más de 200 millones | Alto | `SUPERVISOR`, `GERENTE`, `RIESGOS` |
 
-Gerente y Riesgos son independientes y se pueden aprobar en cualquier orden. Cuando todas las ramas activadas aprobaron, la revisión pasa a `EJECUTANDO` y se persiste la intención de ejecución. Para más de 200 millones, después de las aprobaciones el proceso espera el mensaje `RIESGO_EVALUADO`; en `desarrollo` no hay una ruta HTTP para enviarlo, así que la solicitud queda en `PENDIENTE_APROBACION` hasta la integración de próximas etapas. El fixture se usa solo en pruebas automatizadas.
+Gerente y Riesgos son independientes y se pueden aprobar en cualquier orden. Cuando todas las ramas activadas aprobaron, la revisión pasa a `EJECUTANDO` y se persiste la intención de ejecución. Para más de 200 millones, después de las aprobaciones el proceso espera el mensaje `RIESGO_EVALUADO`; la notificación firmada se envía al endpoint de riesgo externo descrito más abajo. No se usa un fixture para resolver esa espera.
 
 ## Ejecución financiera simulada
 
@@ -366,6 +370,90 @@ confirmacion:{solicitudId}:{revisionId}
 La confirmación es el punto irreversible. Una reserva confirmada no se puede liberar. El estado observable queda en `operacion_simulada`.
 
 Si el trabajador está deshabilitado, la revisión queda en `EJECUTANDO` con la intención `PENDIENTE`. Al reiniciar con `EJECUCION_TRABAJADOR_HABILITADO=true`, el trabajador retoma la intención y el proceso termina en `EJECUTADA`.
+
+## Riesgo externo asíncrono
+
+Para montos superiores a 200 millones, la aplicación persiste una evaluación externa en `evaluacion_riesgo` con estado `PENDIENTE` y la clave estable `riesgo:{solicitudId}:{revisionId}`. Un trabajador envía la solicitud al proveedor simulado fuera de la transacción de negocio y guarda la referencia. Si el envío falla, programa un reintento limitado con la misma identidad.
+
+El proveedor notifica el resultado con:
+
+```text
+POST /api/v1/integraciones/riesgos/notificacion
+```
+
+Cabeceras:
+
+```text
+X-Proveedor
+X-Identificador-Evento
+X-Timestamp
+X-Firma
+```
+
+La firma es HMAC-SHA256 sobre el texto canónico:
+
+```text
+proveedor + "\n" +
+identificadorEvento + "\n" +
+timestamp + "\n" +
+cuerpoCrudo
+```
+
+El secreto se toma de `RIESGO_EXTERNO_SECRETO`. Si está vacío, el endpoint rechaza todas las notificaciones. `X-Timestamp` y `fechaProveedor` deben estar dentro de `RIESGO_EXTERNO_VENTANA_TIEMPO`.
+
+Cuerpo mínimo:
+
+```json
+{
+  "proveedor": "proveedor-riesgo-simulado",
+  "identificadorEvento": "evt-123",
+  "identificadorSolicitud": "6f7f8a8e-5f4a-4d1a-9e0f-1d2c3b4a5e6f",
+  "numeroRevision": 1,
+  "nivelRiesgo": "ALTO",
+  "fechaProveedor": "2026-10-31T12:00:00Z",
+  "resultado": "Evaluación externa de demostración"
+}
+```
+
+La aplicación guarda el evento en `evento_externo` antes de correlacionarlo. Si la solicitud, la revisión o la suscripción BPMN todavía no existen, el evento queda `PENDIENTE` y se reintenta sin consumir intentos fallidos. Un duplicado idéntico responde `200 DUPLICADO`; el mismo identificador con otra huella responde `409 EVENTO_EXTERNO_EN_CONFLICTO`; un evento de una revisión anterior o terminal queda `OBSOLETO`.
+
+Cuando el proceso espera `RIESGO_EVALUADO`, la aplicación consolida el máximo entre riesgo interno y externo, registra `EVALUACION_EXTERNA_RESUELTA`, marca el evento `PROCESADO` y envía el mensaje a la instancia específica. El delegate lee la evaluación persistida y no confía en variables del mensaje. El evento no crea ni modifica aprobaciones.
+
+Ejemplo de firma en PowerShell:
+
+```powershell
+$proveedor = "proveedor-riesgo-simulado"
+$evento = "evt-manual-1"
+$timestamp = (Get-Date).ToUniversalTime().ToString("o")
+$cuerpo = @{
+  proveedor = $proveedor
+  identificadorEvento = $evento
+  identificadorSolicitud = $solicitudId
+  numeroRevision = 1
+  nivelRiesgo = "ALTO"
+  fechaProveedor = (Get-Date).ToUniversalTime().ToString("o")
+  resultado = "Evaluación externa manual"
+} | ConvertTo-Json -Compress
+
+$canonico = "$proveedor`n$evento`n$timestamp`n$cuerpo"
+$hmac = [System.Security.Cryptography.HMACSHA256]::new(
+  [Text.Encoding]::UTF8.GetBytes($env:RIESGO_EXTERNO_SECRETO))
+$firma = [BitConverter]::ToString(
+  $hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonico))
+).Replace('-', '').ToLowerInvariant()
+
+Invoke-WebRequest -Method Post `
+  -Uri "http://localhost:8080/api/v1/integraciones/riesgos/notificacion" `
+  -Headers @{
+    "X-Proveedor" = $proveedor
+    "X-Identificador-Evento" = $evento
+    "X-Timestamp" = $timestamp
+    "X-Firma" = $firma
+  } `
+  -ContentType "application/json" `
+  -Body $cuerpo `
+  -UseBasicParsing
+```
 
 ## Recuperación e incidentes
 
@@ -416,7 +504,7 @@ La tabla `intento_compensacion` conserva el estado durable de la cancelación (`
 
 La carrera contra el despacho se resuelve con las mismas claves estables y la idempotencia del proveedor: si la confirmación gana, la liberación falla y la revisión queda `EJECUTADA`; si la liberación gana, la confirmación falla y la revisión queda `CANCELADA`. El trabajador de compensación retoma las intenciones `PENDIENTE` y las liberaciones `LIBERANDO` que quedaron interrumpidas por un reinicio.
 
-El riesgo externo real y la revisión manual de riesgo quedan para etapas posteriores.
+La integración de riesgo externo simulada ya está implementada. El vencimiento y la revisión manual de riesgo quedan para la siguiente etapa.
 
 ### Reenvío
 
@@ -451,7 +539,7 @@ No es la API final de solicitudes.
 - Los roles del token no cambian hasta que vence; `/autenticacion/yo` muestra los roles actuales de la base.
 - El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
 - La API cancela solicitudes y usa un proveedor financiero simulado; no ejecuta operaciones financieras reales. El reenvío está disponible solo para el dueño y con las reglas de la sección de reenvío.
-- Las rutas combinadas, el paralelismo, el rechazo, el reenvío, la cancelación, la compensación y la recuperación de ejecuciones inciertas están implementados. La integración real de riesgo externo queda para una etapa posterior.
+- Las rutas combinadas, el paralelismo, el rechazo, el reenvío, la cancelación, la compensación, la recuperación de ejecuciones inciertas y la integración simulada de riesgo externo están implementados. El proveedor de riesgo real y la revisión manual quedan para etapas posteriores.
 - El incidente de ejecución no usa `REVISION_MANUAL` para no bloquear el reintento seguro; la intervención se realiza desde la API de incidentes. La compensación usa `REVISION_MANUAL` como estado de su propia intención, no como estado de la revisión.
 - La notificación de 24 horas y la reasignación de 48 horas están implementadas. No hay reasignación manual por administrador ni notificación por correo.
 - No se implementó marcar notificaciones como leídas.
