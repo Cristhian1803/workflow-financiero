@@ -51,6 +51,12 @@ Cada tarea humana tiene dos temporizadores de frontera no interruptores:
 Las duraciones se reciben como variables ISO-8601 (`duracionNotificacion` y
 `duracionReasignacion`). No están fijadas en el XML.
 
+El temporizador de 24 horas crea una notificación persistida para el rol funcional. El de
+48 horas reasigna la tarea al superior configurado, conserva el rol original y no completa la
+tarea. Si no hay un superior activo, registra `REASIGNACION_FALLIDA` y notifica al rol
+`ADMINISTRADOR`; la tarea sigue pendiente. La decisión del delegado conserva el rol funcional
+y queda marcada como delegada.
+
 ## Política de versiones
 
 - Una instancia existente permanece en la versión con la que se inició.
@@ -94,5 +100,6 @@ la decisión y avanzan el motor en la misma transacción. Un rechazo cancela las
 de negocio de la revisión y usa el fin de terminación del proceso para cerrar las ramas
 restantes. El reenvío no modifica el BPMN: crea una revisión y una instancia nuevas y conserva
 la anterior con su historial. El temporizador de 24 horas crea una notificación persistida y
-consultable por el rol destinatario; la reasignación de 48 horas sigue pendiente. El
-paralelismo completo y la espera de riesgo externo están probados en el proceso real.
+consultable por el rol destinatario; el de 48 horas reasigna la tarea al superior configurado y
+permite resolverla por delegación. El paralelismo completo y la espera de riesgo externo están
+probados en el proceso real.

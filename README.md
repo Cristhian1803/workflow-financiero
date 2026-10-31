@@ -263,6 +263,16 @@ Invoke-RestMethod `
 
 Cada elemento incluye `id`, `tipo`, `contenido`, `estado`, `idTarea`, `idSolicitud`, `revision`, `fechaCreacion` y `fechaLectura`. En esta etapa no hay endpoint para marcar como leída ni envío de correo. Una tarea aprobada o asignada antes del vencimiento no genera la notificación de 24 horas.
 
+### Reasignación y delegación
+
+Si una tarea sigue pendiente al cumplirse el plazo de reasignación, se asigna al primer usuario activo con el rol superior configurado, ordenado por nombre de usuario. La tarea conserva su rol funcional y no se completa: solo cambia el responsable.
+
+El nuevo asignado recibe una notificación `REASIGNACION_48H` y puede resolver la tarea por delegación. La decisión conserva el rol funcional original y devuelve `delegado=true`. La bandeja muestra la tarea asignada al delegado y deja de mostrarla a los demás usuarios del rol.
+
+Si no hay un superior activo, la tarea sigue pendiente y sin asignado. Se registra el evento `REASIGNACION_FALLIDA` y se crea una notificación para el rol `ADMINISTRADOR`. El creador de la solicitud no puede aprobar aunque quede como superior asignado. La recuperación operativa y la API de incidentes son de una etapa posterior.
+
+La notificación de 24 horas no se crea si la tarea ya fue reasignada. La aprobación antes del vencimiento tampoco genera una reasignación tardía.
+
 ### Aprobar y rechazar
 
 ```powershell
@@ -358,8 +368,9 @@ No es la API final de solicitudes.
 - El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
 - La API no cancela solicitudes ni ejecuta operaciones financieras reales. El reenvío está disponible solo para el dueño y con las reglas de la sección de reenvío.
 - Las rutas combinadas, el paralelismo, el rechazo y el reenvío están implementados. La integración real de riesgo externo, la cancelación y la compensación quedan para futuras etapas.
-- La notificación de 24 horas está implementada. La reasignación de 48 horas y la delegación completa todavía no.
-- No se implementó marcar notificaciones como leídas ni envío de correo.
+- La notificación de 24 horas y la reasignación de 48 horas están implementadas. No hay reasignación manual por administrador ni notificación por correo.
+- No se implementó marcar notificaciones como leídas.
+- Si el superior elegido es el creador, la tarea queda asignada a una persona que no puede aprobarla; la recuperación operativa es de una etapa posterior.
 - El creador no puede aprobar sus propias tareas.
 - El detalle recalcula el plan de aprobación con las políticas vigentes, porque el plan no se persiste.
 - El auditor puede consultar el historial, pero no el detalle ni el proceso de una solicitud ajena.
