@@ -102,6 +102,20 @@ public class ControladorProveedorFinancieroSimulado {
         }
 
         OperacionFinanciera operacion = peticion.aDominio();
+        if (fallos.errorDefinitivo(operacion.clave())) {
+            return fallo(
+                CodigoError.DATOS_INVALIDOS,
+                "Error definitivo simulado antes de aplicar el efecto",
+                peticionHttp
+            );
+        }
+        if (fallos.conflictoIdempotencia(operacion.clave())) {
+            return fallo(
+                CodigoError.CONFLICTO_DATOS,
+                "Conflicto de idempotencia simulado",
+                peticionHttp
+            );
+        }
         if (fallos.fallaAntesDelEfecto(operacion.clave(), accion)) {
             return fallo(
                 CodigoError.ERROR_INTERNO,

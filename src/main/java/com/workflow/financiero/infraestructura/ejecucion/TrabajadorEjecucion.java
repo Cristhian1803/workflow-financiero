@@ -1,5 +1,8 @@
 package com.workflow.financiero.infraestructura.ejecucion;
 
+import com.workflow.financiero.aplicacion.excepcion.ConflictoProveedorFinancieroException;
+import com.workflow.financiero.aplicacion.excepcion.ErrorDefinitivoProveedorFinancieroException;
+import com.workflow.financiero.aplicacion.excepcion.ErrorRecuperableProveedorFinancieroException;
 import com.workflow.financiero.aplicacion.puerto.PuertoProveedorFinanciero;
 import com.workflow.financiero.aplicacion.servicio.ServicioIntencionEjecucion;
 import com.workflow.financiero.aplicacion.servicio.TrabajoEjecucion;
@@ -23,6 +26,7 @@ import org.springframework.stereotype.Component;
 public class TrabajadorEjecucion {
 
     private final ServicioIntencionEjecucion servicioIntencion;
+    private final TrabajadorRecuperacionEjecucion recuperador;
     private final PuertoProveedorFinanciero proveedor;
 
     private final String identificador = UUID.randomUUID().toString();
@@ -54,13 +58,72 @@ public class TrabajadorEjecucion {
 
             servicioIntencion.registrarConfirmacion(
                 trabajo, resultadoReserva, resultadoConfirmacion);
+        } catch (ConflictoProveedorFinancieroException error) {
+            registrarConflicto(trabajo, error);
+        } catch (ErrorDefinitivoProveedorFinancieroException error) {
+            registrarFalloDefinitivo(trabajo, error);
+        } catch (ErrorRecuperableProveedorFinancieroException error) {
+            registrarYReconciliar(trabajo, error);
         } catch (RuntimeException error) {
-            // No se reintenta ni se inventa un resultado: I-18b reconcilia.
             log.error(
                 "No se pudo completar la intención {} de la revisión {}: {}",
                 trabajo.intentoId(),
                 trabajo.revisionId(),
                 error.getMessage()
+            );
+            registrarYReconciliar(trabajo, error);
+        }
+    }
+
+    private void registrarConflicto(
+        TrabajoEjecucion trabajo,
+        RuntimeException error
+    ) {
+        try {
+            servicioIntencion.registrarFalloDefinitivo(
+                trabajo, error.getMessage(), false);
+            servicioIntencion.cerrarEjecucionDesconocida(
+                trabajo, error.getMessage());
+        } catch (RuntimeException fallo) {
+            log.error(
+                "No se pudo registrar el conflicto de la intención {}: {}",
+                trabajo.intentoId(),
+                fallo.getMessage()
+            );
+        }
+    }
+
+    private void registrarFalloDefinitivo(
+        TrabajoEjecucion trabajo,
+        RuntimeException error
+    ) {
+        try {
+            servicioIntencion.registrarFalloDefinitivo(
+                trabajo, error.getMessage(), true);
+            servicioIntencion.cerrarEjecucionDesconocida(
+                trabajo, error.getMessage());
+        } catch (RuntimeException fallo) {
+            log.error(
+                "No se pudo registrar el fallo de la intención {}: {}",
+                trabajo.intentoId(),
+                fallo.getMessage()
+            );
+        }
+    }
+
+    private void registrarYReconciliar(
+        TrabajoEjecucion trabajo,
+        RuntimeException error
+    ) {
+        try {
+            servicioIntencion.registrarResultadoDesconocido(
+                trabajo, error.getMessage());
+            recuperador.reconciliarAutomatico(trabajo);
+        } catch (RuntimeException fallo) {
+            log.error(
+                "No se pudo recuperar la intención {}: {}",
+                trabajo.intentoId(),
+                fallo.getMessage()
             );
         }
     }

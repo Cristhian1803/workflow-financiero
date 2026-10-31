@@ -5,7 +5,10 @@ import com.workflow.financiero.aplicacion.excepcion.CredencialesInvalidasExcepti
 import com.workflow.financiero.dominio.excepcion.AccesoDenegadoException;
 import com.workflow.financiero.dominio.excepcion.AprobacionNoPermitidaException;
 import com.workflow.financiero.dominio.excepcion.DecisionInvalidaException;
+import com.workflow.financiero.dominio.excepcion.EjecucionNoPermitidaException;
+import com.workflow.financiero.dominio.excepcion.IncidenteNoEncontradoException;
 import com.workflow.financiero.dominio.excepcion.ReenvioNoPermitidoException;
+import com.workflow.financiero.dominio.excepcion.ReintentoNoPermitidoException;
 import com.workflow.financiero.dominio.excepcion.RolAprobadorInvalidoException;
 import com.workflow.financiero.dominio.excepcion.SegregacionFuncionesException;
 import com.workflow.financiero.dominio.excepcion.SolicitudInvalidaException;
@@ -222,6 +225,42 @@ public class ManejadorErroresApi {
     ) {
         return respuesta(
             CodigoError.REENVIO_NO_PERMITIDO,
+            excepcion.getMessage(),
+            peticion
+        );
+    }
+
+    @ExceptionHandler(IncidenteNoEncontradoException.class)
+    ResponseEntity<ProblemDetail> incidenteNoEncontrado(
+        IncidenteNoEncontradoException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.INCIDENTE_NO_ENCONTRADO,
+            "No se encontró el incidente solicitado",
+            peticion
+        );
+    }
+
+    @ExceptionHandler(ReintentoNoPermitidoException.class)
+    ResponseEntity<ProblemDetail> reintentoNoPermitido(
+        ReintentoNoPermitidoException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.REINTENTO_NO_PERMITIDO,
+            excepcion.getMessage(),
+            peticion
+        );
+    }
+
+    @ExceptionHandler(EjecucionNoPermitidaException.class)
+    ResponseEntity<ProblemDetail> ejecucionNoPermitida(
+        EjecucionNoPermitidaException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.EJECUCION_NO_PERMITIDA,
             excepcion.getMessage(),
             peticion
         );

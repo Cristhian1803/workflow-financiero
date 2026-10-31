@@ -46,4 +46,12 @@ public class ConfiguracionFallosSimulador {
     public boolean consultaNoDisponible(String clave) {
         return fallos.get(clave) == ModoFalloSimulador.CONSULTA_NO_DISPONIBLE;
     }
+
+    public boolean errorDefinitivo(String clave) {
+        return fallos.get(clave) == ModoFalloSimulador.ERROR_DEFINITIVO;
+    }
+
+    public boolean conflictoIdempotencia(String clave) {
+        return fallos.get(clave) == ModoFalloSimulador.CONFLICTO_IDEMPOTENCIA;
+    }
 }

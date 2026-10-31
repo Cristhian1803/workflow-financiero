@@ -4,6 +4,7 @@ import com.workflow.financiero.aplicacion.configuracion.PropiedadesProveedorFina
 import com.workflow.financiero.aplicacion.excepcion.ConflictoProveedorFinancieroException;
 import com.workflow.financiero.aplicacion.excepcion.ErrorDefinitivoProveedorFinancieroException;
 import com.workflow.financiero.aplicacion.excepcion.ErrorRecuperableProveedorFinancieroException;
+import com.workflow.financiero.aplicacion.excepcion.OperacionNoEncontradaProveedorFinancieroException;
 import com.workflow.financiero.aplicacion.puerto.PuertoProveedorFinanciero;
 import com.workflow.financiero.dominio.ejecucion.AccionFinanciera;
 import com.workflow.financiero.dominio.ejecucion.ClavesOperacionFinanciera;
@@ -215,6 +216,12 @@ public class AdaptadorProveedorFinancieroHttp
 
     private RuntimeException traducir(RestClientResponseException error) {
         int estado = error.getStatusCode().value();
+        if (estado == 404) {
+            return new OperacionNoEncontradaProveedorFinancieroException(
+                "El proveedor financiero no conoce la operación consultada",
+                error
+            );
+        }
         if (estado == 409) {
             return new ConflictoProveedorFinancieroException(
                 "El proveedor financiero informó un conflicto de idempotencia",

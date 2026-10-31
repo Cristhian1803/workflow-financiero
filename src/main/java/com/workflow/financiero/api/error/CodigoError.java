@@ -23,6 +23,9 @@ public enum CodigoError {
     APROBACION_NO_PERMITIDA(HttpStatus.FORBIDDEN, "Aprobación no permitida"),
     SEGREGACION_FUNCIONES(HttpStatus.FORBIDDEN, "Segregación de funciones"),
     CONFLICTO_DATOS(HttpStatus.CONFLICT, "Conflicto de datos"),
+    INCIDENTE_NO_ENCONTRADO(HttpStatus.NOT_FOUND, "Incidente no encontrado"),
+    REINTENTO_NO_PERMITIDO(HttpStatus.CONFLICT, "Reintento no permitido"),
+    EJECUCION_NO_PERMITIDA(HttpStatus.CONFLICT, "Ejecución no permitida"),
     REENVIO_NO_PERMITIDO(HttpStatus.UNPROCESSABLE_ENTITY, "Reenvío no permitido"),
     SERVICIO_NO_DISPONIBLE(
         HttpStatus.SERVICE_UNAVAILABLE,

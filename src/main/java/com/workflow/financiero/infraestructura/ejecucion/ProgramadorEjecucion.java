@@ -21,14 +21,20 @@ import org.springframework.stereotype.Component;
 public class ProgramadorEjecucion {
 
     private final TrabajadorEjecucion trabajador;
+    private final TrabajadorRecuperacionEjecucion recuperador;
 
     @Scheduled(
         fixedDelayString = "${ejecucion.trabajador.intervalo-ms:2000}"
     )
     public void ejecutar() {
         int procesadas = trabajador.ejecutarPendientes();
-        if (procesadas > 0) {
-            log.info("Se procesaron {} intenciones de ejecución", procesadas);
+        int recuperadas = recuperador.reconciliarPendientes();
+        if (procesadas > 0 || recuperadas > 0) {
+            log.info(
+                "Se procesaron {} intenciones y se reconciliaron {}",
+                procesadas,
+                recuperadas
+            );
         }
     }
 }

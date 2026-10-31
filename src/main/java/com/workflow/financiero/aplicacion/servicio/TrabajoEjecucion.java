@@ -1,5 +1,6 @@
 package com.workflow.financiero.aplicacion.servicio;
 
+import com.workflow.financiero.dominio.estado.EstadoIntentoEjecucion;
 import java.math.BigDecimal;
 import java.util.UUID;
 
@@ -16,6 +17,8 @@ public record TrabajoEjecucion(
     String huella,
     BigDecimal monto,
     String moneda,
-    String tipoOperacion
+    String tipoOperacion,
+    EstadoIntentoEjecucion estado,
+    int intentos
 ) {
 }
