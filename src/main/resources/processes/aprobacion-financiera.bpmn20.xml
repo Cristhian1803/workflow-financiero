@@ -8,6 +8,7 @@
              targetNamespace="http://workflow.financiero/proceso/aprobacion-financiera">
 
     <message id="mensajeRiesgoEvaluado" name="RIESGO_EVALUADO"/>
+    <message id="mensajeEjecucionFinalizada" name="EJECUCION_FINALIZADA"/>
 
     <process id="aprobacionFinanciera" name="Aprobación financiera" isExecutable="true">
         <documentation>
@@ -113,18 +114,24 @@
             </documentation>
         </serviceTask>
 
-        <serviceTask id="prepararEjecucion" name="Preparar ejecución controlada"
+        <serviceTask id="prepararEjecucion" name="Preparar ejecución"
                      flowable:delegateExpression="${delegadoPrepararEjecucion}">
             <documentation>
-                Registra la preparación de la ejecución mediante un adaptador controlado,
-                sin llamar a un proveedor financiero.
+                Persiste la intención durable y deja la revisión en EJECUTANDO.
+                No llama al proveedor financiero.
             </documentation>
         </serviceTask>
 
-        <serviceTask id="registrarResultado" name="Registrar resultado controlado"
-                     flowable:delegateExpression="${delegadoRegistrarResultado}">
+        <intermediateCatchEvent id="esperarResultadoEjecucion"
+                                name="Esperar resultado de ejecución">
+            <messageEventDefinition messageRef="mensajeEjecucionFinalizada"/>
+        </intermediateCatchEvent>
+
+        <serviceTask id="marcarEjecutada" name="Marcar ejecutada"
+                     flowable:delegateExpression="${delegadoMarcarEjecutada}">
             <documentation>
-                Registra el resultado simulado y finaliza el proceso.
+                Transiciona la revisión a EJECUTADA y registra el resultado
+                confirmado por el proveedor.
             </documentation>
         </serviceTask>
 
@@ -296,9 +303,13 @@
                       targetRef="prepararEjecucion"/>
 
         <sequenceFlow id="flujoPrepararEjecucion" sourceRef="prepararEjecucion"
-                      targetRef="registrarResultado"/>
+                      targetRef="esperarResultadoEjecucion"/>
 
-        <sequenceFlow id="flujoRegistrarResultado" sourceRef="registrarResultado"
+        <sequenceFlow id="flujoEsperaResultadoEjecucion"
+                      sourceRef="esperarResultadoEjecucion"
+                      targetRef="marcarEjecutada"/>
+
+        <sequenceFlow id="flujoMarcarEjecutada" sourceRef="marcarEjecutada"
                       targetRef="finProceso"/>
 
         <sequenceFlow id="flujoRechazo" sourceRef="registrarRechazo" targetRef="finRechazo"/>
@@ -402,11 +413,14 @@
             <bpmndi:BPMNShape id="prepararEjecucion_di" bpmnElement="prepararEjecucion">
                 <omgdc:Bounds x="2060" y="380" width="130" height="80"/>
             </bpmndi:BPMNShape>
-            <bpmndi:BPMNShape id="registrarResultado_di" bpmnElement="registrarResultado">
-                <omgdc:Bounds x="2230" y="380" width="130" height="80"/>
+            <bpmndi:BPMNShape id="esperarResultadoEjecucion_di" bpmnElement="esperarResultadoEjecucion">
+                <omgdc:Bounds x="2230" y="402" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="marcarEjecutada_di" bpmnElement="marcarEjecutada">
+                <omgdc:Bounds x="2300" y="380" width="130" height="80"/>
             </bpmndi:BPMNShape>
             <bpmndi:BPMNShape id="finProceso_di" bpmnElement="finProceso">
-                <omgdc:Bounds x="2410" y="402" width="36" height="36"/>
+                <omgdc:Bounds x="2560" y="402" width="36" height="36"/>
             </bpmndi:BPMNShape>
 
             <bpmndi:BPMNShape id="registrarRechazo_di" bpmnElement="registrarRechazo">
@@ -594,9 +608,13 @@
                 <omgdi:waypoint x="2190" y="420"/>
                 <omgdi:waypoint x="2230" y="420"/>
             </bpmndi:BPMNEdge>
-            <bpmndi:BPMNEdge id="flujoRegistrarResultado_di" bpmnElement="flujoRegistrarResultado">
-                <omgdi:waypoint x="2360" y="420"/>
-                <omgdi:waypoint x="2410" y="420"/>
+            <bpmndi:BPMNEdge id="flujoEsperaResultadoEjecucion_di" bpmnElement="flujoEsperaResultadoEjecucion">
+                <omgdi:waypoint x="2266" y="420"/>
+                <omgdi:waypoint x="2300" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoMarcarEjecutada_di" bpmnElement="flujoMarcarEjecutada">
+                <omgdi:waypoint x="2430" y="420"/>
+                <omgdi:waypoint x="2560" y="420"/>
             </bpmndi:BPMNEdge>
             <bpmndi:BPMNEdge id="flujoRechazo_di" bpmnElement="flujoRechazo">
                 <omgdi:waypoint x="1550" y="1040"/>

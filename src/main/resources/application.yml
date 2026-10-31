@@ -41,6 +41,11 @@ integracion:
     tiempo-lectura: ${PROVEEDOR_FINANCIERO_TIEMPO_LECTURA:PT5S}
     secreto: ${PROVEEDOR_FINANCIERO_SECRETO:}
 
+ejecucion:
+  trabajador:
+    habilitado: ${EJECUCION_TRABAJADOR_HABILITADO:false}
+    intervalo-ms: ${EJECUCION_TRABAJADOR_INTERVALO_MS:2000}
+
 seguridad:
   jwt:
     secreto: ${JWT_SECRETO:}
