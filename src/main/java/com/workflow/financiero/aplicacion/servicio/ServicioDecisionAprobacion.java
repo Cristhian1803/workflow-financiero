@@ -37,6 +37,12 @@ public class ServicioDecisionAprobacion {
 
     private static final int LONGITUD_MAXIMA_TEXTO = 1000;
 
+    private static final Map<String, String> VARIABLE_DECISION_POR_ROL = Map.of(
+        "SUPERVISOR", "decisionSupervisor",
+        "GERENTE", "decisionGerente",
+        "RIESGOS", "decisionRiesgos"
+    );
+
     private final SolicitudFinancieraRepositorio solicitudRepositorio;
     private final TareaAprobacionRepositorio tareaRepositorio;
     private final DecisionAprobacionRepositorio decisionRepositorio;
@@ -92,7 +98,10 @@ public class ServicioDecisionAprobacion {
         );
         tareaRepositorio.flush();
 
-        completarTarea(contexto.tarea(), Map.of("decision", "APROBADA"));
+        completarTarea(
+            contexto.tarea(),
+            Map.of(variableDecision(contexto.tarea()), "APROBADA")
+        );
         return resultado(tareaId, decision);
     }
 
@@ -132,7 +141,7 @@ public class ServicioDecisionAprobacion {
         tareaRepositorio.flush();
 
         Map<String, Object> variables = new HashMap<>();
-        variables.put("decision", "RECHAZADA");
+        variables.put(variableDecision(contexto.tarea()), "RECHAZADA");
         variables.put("tareaAprobacionId", contexto.tarea().getId().toString());
         variables.put("actorId", actual.id().toString());
         variables.put("rolFuncional", contexto.tarea().getRol().getCodigo());
@@ -222,6 +231,17 @@ public class ServicioDecisionAprobacion {
             );
         }
         return motivo.trim();
+    }
+
+    private String variableDecision(TareaAprobacion tarea) {
+        String variable = VARIABLE_DECISION_POR_ROL.get(
+            tarea.getRol().getCodigo());
+        if (variable == null) {
+            throw new TransicionTareaInvalidaException(
+                "No hay una variable de decisión para el rol "
+                    + tarea.getRol().getCodigo());
+        }
+        return variable;
     }
 
     private void completarTarea(

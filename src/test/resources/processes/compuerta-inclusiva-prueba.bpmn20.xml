@@ -51,27 +51,27 @@
 
         <sequenceFlow id="flujoSupervisorAprobado" sourceRef="decidirSupervisor"
                       targetRef="union">
-            <conditionExpression xsi:type="tFormalExpression">${decision == 'APROBADA'}</conditionExpression>
+            <conditionExpression xsi:type="tFormalExpression">${decisionSupervisor == 'APROBADA'}</conditionExpression>
         </sequenceFlow>
         <sequenceFlow id="flujoSupervisorRechazado" sourceRef="decidirSupervisor"
                       targetRef="registrarRechazo">
-            <conditionExpression xsi:type="tFormalExpression">${decision == 'RECHAZADA'}</conditionExpression>
+            <conditionExpression xsi:type="tFormalExpression">${decisionSupervisor == 'RECHAZADA'}</conditionExpression>
         </sequenceFlow>
         <sequenceFlow id="flujoGerenteAprobado" sourceRef="decidirGerente"
                       targetRef="union">
-            <conditionExpression xsi:type="tFormalExpression">${decision == 'APROBADA'}</conditionExpression>
+            <conditionExpression xsi:type="tFormalExpression">${decisionGerente == 'APROBADA'}</conditionExpression>
         </sequenceFlow>
         <sequenceFlow id="flujoGerenteRechazado" sourceRef="decidirGerente"
                       targetRef="registrarRechazo">
-            <conditionExpression xsi:type="tFormalExpression">${decision == 'RECHAZADA'}</conditionExpression>
+            <conditionExpression xsi:type="tFormalExpression">${decisionGerente == 'RECHAZADA'}</conditionExpression>
         </sequenceFlow>
         <sequenceFlow id="flujoRiesgosAprobado" sourceRef="decidirRiesgos"
                       targetRef="union">
-            <conditionExpression xsi:type="tFormalExpression">${decision == 'APROBADA'}</conditionExpression>
+            <conditionExpression xsi:type="tFormalExpression">${decisionRiesgos == 'APROBADA'}</conditionExpression>
         </sequenceFlow>
         <sequenceFlow id="flujoRiesgosRechazado" sourceRef="decidirRiesgos"
                       targetRef="registrarRechazo">
-            <conditionExpression xsi:type="tFormalExpression">${decision == 'RECHAZADA'}</conditionExpression>
+            <conditionExpression xsi:type="tFormalExpression">${decisionRiesgos == 'RECHAZADA'}</conditionExpression>
         </sequenceFlow>
 
         <inclusiveGateway id="union"/>

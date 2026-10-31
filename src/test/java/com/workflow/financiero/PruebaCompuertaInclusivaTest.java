@@ -178,7 +178,20 @@ class PruebaCompuertaInclusivaTest extends PruebaIntegracionBase {
             .taskDefinitionKey(claveTarea)
             .singleResult();
         assertThat(tarea).as("tarea %s", claveTarea).isNotNull();
-        taskService.complete(tarea.getId(), Map.of("decision", decision));
+        taskService.complete(
+            tarea.getId(),
+            Map.of(variableDecision(claveTarea), decision)
+        );
+    }
+
+    private String variableDecision(String claveTarea) {
+        return switch (claveTarea) {
+            case "tareaSupervisor" -> "decisionSupervisor";
+            case "tareaGerente" -> "decisionGerente";
+            case "tareaRiesgos" -> "decisionRiesgos";
+            default -> throw new IllegalArgumentException(
+                "Tarea desconocida: " + claveTarea);
+        };
     }
 
     private boolean estaActivo(String procesoId) {

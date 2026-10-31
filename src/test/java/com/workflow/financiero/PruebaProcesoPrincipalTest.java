@@ -259,12 +259,20 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(condicion(proceso, "flujoRequiereRiesgoExterno"))
             .contains("requiereEvaluacionExterna");
 
-        for (String rol : List.of("Supervisor", "Gerente", "Riesgos")) {
+        Map<String, String> variablesDecision = Map.of(
+            "Supervisor", "decisionSupervisor",
+            "Gerente", "decisionGerente",
+            "Riesgos", "decisionRiesgos");
+        variablesDecision.forEach((rol, variable) -> {
             assertThat(condicion(proceso, "flujo" + rol + "Aprobado"))
-                .contains("APROBADA");
+                .contains(variable)
+                .contains("APROBADA")
+                .doesNotContain("decision ==");
             assertThat(condicion(proceso, "flujo" + rol + "Rechazado"))
-                .contains("RECHAZADA");
-        }
+                .contains(variable)
+                .contains("RECHAZADA")
+                .doesNotContain("decision ==");
+        });
 
         Map<String, String> delegates = Map.ofEntries(
             Map.entry("verificarSolicitud", "delegadoVerificarSolicitud"),
