@@ -22,7 +22,17 @@ spring:
 flowable:
   async-executor-activate: true
   database-schema-update: true
+  history-level: audit
   process-definition-location-prefix: classpath:/processes/
+
+flujo:
+  aprobacion:
+    notificacion: ${APROBACION_DURACION_NOTIFICACION:PT24H}
+    reasignacion: ${APROBACION_DURACION_REASIGNACION:PT48H}
+    superiores:
+      SUPERVISOR: GERENTE
+      GERENTE: GERENTE_GENERAL
+      RIESGOS: JEFE_RIESGOS
 
 seguridad:
   jwt:

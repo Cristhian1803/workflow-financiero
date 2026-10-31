@@ -51,8 +51,14 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
 
     private static final String RUTA_LOGIN = "/api/v1/autenticacion/iniciar-sesion";
     private static final String RUTA_YO = "/api/v1/autenticacion/yo";
+    private static final String RUTA_TAREAS = "/api/v1/tareas-aprobacion";
+    private static final String RUTA_TAREA_APROBAR =
+        RUTA_TAREAS + "/00000000-0000-0000-0000-000000000001/aprobar";
+    private static final String RUTA_TAREA_RECHAZAR =
+        RUTA_TAREAS + "/00000000-0000-0000-0000-000000000001/rechazar";
     private static final String USUARIOS_DEMO =
-        "'demo', 'demo2', 'auditor', 'admin'";
+        "'demo', 'demo2', 'auditor', 'admin', 'supervisor', 'gerente', "
+            + "'riesgos', 'gerente_general', 'jefe_riesgos', 'operaciones'";
 
     @Autowired
     MockMvc mockMvc;
@@ -167,9 +173,10 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
     @DisplayName("Un token alterado es rechazado")
     void rechazaTokenAlterado() throws Exception {
         String token = iniciarSesion("demo", "demo");
-        char ultimo = token.charAt(token.length() - 1);
-        char reemplazo = ultimo == 'a' ? 'b' : 'a';
-        String alterado = token.substring(0, token.length() - 1) + reemplazo;
+        String[] partes = token.split("\\.");
+        char[] firma = partes[2].toCharArray();
+        firma[0] = firma[0] == 'a' ? 'b' : 'a';
+        String alterado = partes[0] + "." + partes[1] + "." + new String(firma);
 
         mockMvc.perform(conToken(get(RUTA_YO), alterado))
             .andExpect(status().isUnauthorized())
@@ -348,10 +355,125 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
         Long despues = contarUsuariosDemo();
         String hashDespues = hashDemo();
 
-        assertThat(antes).isEqualTo(4L);
-        assertThat(despues).isEqualTo(4L);
+        assertThat(antes).isEqualTo(10L);
+        assertThat(despues).isEqualTo(10L);
         assertThat(hashDespues).isEqualTo(hashAntes);
         assertThat(hashDespues).startsWith("$2");
+    }
+
+    @Test
+    @DisplayName("La bandeja exige autenticación")
+    void bandejaExigeAutenticacion() throws Exception {
+        mockMvc.perform(get(RUTA_TAREAS))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"));
+    }
+
+    @Test
+    @DisplayName("La bandeja rechaza a un solicitante sin rol de aprobación")
+    void bandejaRechazaSolicitante() throws Exception {
+        mockMvc.perform(conToken(
+                get(RUTA_TAREAS), iniciarSesion("demo", "demo")))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    @Test
+    @DisplayName("La bandeja rechaza al administrador sin rol funcional")
+    void bandejaRechazaAdministrador() throws Exception {
+        mockMvc.perform(conToken(
+                get(RUTA_TAREAS), iniciarSesion("admin", "demo")))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    @Test
+    @DisplayName("La bandeja admite a un supervisor")
+    void bandejaAdmiteSupervisor() throws Exception {
+        mockMvc.perform(conToken(
+                get(RUTA_TAREAS), iniciarSesion("supervisor", "demo")))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Aprobar exige autenticación")
+    void aprobarExigeAutenticacion() throws Exception {
+        mockMvc.perform(post(RUTA_TAREA_APROBAR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"));
+    }
+
+    @Test
+    @DisplayName("Aprobar rechaza a un solicitante sin rol de aprobación")
+    void aprobarRechazaSolicitante() throws Exception {
+        mockMvc.perform(conToken(
+                post(RUTA_TAREA_APROBAR), iniciarSesion("demo", "demo"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    @Test
+    @DisplayName("Aprobar rechaza al administrador sin rol funcional")
+    void aprobarRechazaAdministrador() throws Exception {
+        mockMvc.perform(conToken(
+                post(RUTA_TAREA_APROBAR), iniciarSesion("admin", "demo"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    @Test
+    @DisplayName("Aprobar una tarea inexistente responde 404")
+    void aprobarTareaInexistente() throws Exception {
+        mockMvc.perform(conToken(
+                post(RUTA_TAREA_APROBAR), iniciarSesion("supervisor", "demo"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.codigo").value("TAREA_NO_ENCONTRADA"));
+    }
+
+    @Test
+    @DisplayName("Rechazar exige autenticación")
+    void rechazarExigeAutenticacion() throws Exception {
+        mockMvc.perform(post(RUTA_TAREA_RECHAZAR)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"motivo\":\"No corresponde\"}"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"));
+    }
+
+    @Test
+    @DisplayName("Rechazar rechaza a un solicitante sin rol de aprobación")
+    void rechazarRechazaSolicitante() throws Exception {
+        mockMvc.perform(conToken(
+                post(RUTA_TAREA_RECHAZAR), iniciarSesion("demo", "demo"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"motivo\":\"No corresponde\"}"))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    @Test
+    @DisplayName("El token no permite saltarse la elegibilidad de la tarea")
+    void tokenNoSaltaElegibilidadDeLaTarea() throws Exception {
+        Instant ahora = Instant.now();
+        String token = firmar(
+            ahora,
+            ahora.plus(10, ChronoUnit.MINUTES),
+            EMISOR_JWT,
+            "demo",
+            List.of("SUPERVISOR")
+        );
+
+        mockMvc.perform(conToken(get(RUTA_TAREAS), token))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
     }
 
     @Test
@@ -391,12 +513,28 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
     }
 
     private String firmar(Instant emitido, Instant expira, String emisor) {
+        return firmar(
+            emitido,
+            expira,
+            emisor,
+            "demo",
+            List.of("SOLICITANTE")
+        );
+    }
+
+    private String firmar(
+        Instant emitido,
+        Instant expira,
+        String emisor,
+        String sujeto,
+        List<String> roles
+    ) {
         JwtClaimsSet claims = JwtClaimsSet.builder()
             .issuer(emisor)
-            .subject("demo")
+            .subject(sujeto)
             .issuedAt(emitido)
             .expiresAt(expira)
-            .claim("roles", List.of("SOLICITANTE"))
+            .claim("roles", roles)
             .build();
 
         return jwtEncoder.encode(JwtEncoderParameters.from(

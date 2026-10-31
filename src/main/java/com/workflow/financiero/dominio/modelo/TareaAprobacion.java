@@ -111,6 +111,39 @@ public class TareaAprobacion {
         this.actualizadoEn = Instantes.ahora();
     }
 
+    public void asignarIdentificadorMotor(String identificador) {
+        if (identificador == null || identificador.isBlank()) {
+            throw new IllegalArgumentException(
+                "El identificador de la tarea del motor es obligatorio");
+        }
+        if (estado != EstadoTareaAprobacion.PENDIENTE) {
+            throw new TransicionTareaInvalidaException(
+                "No se puede asociar una tarea en estado " + estado);
+        }
+        if (this.identificadorTareaMotor != null
+            && !this.identificadorTareaMotor.equals(identificador)) {
+            throw new IllegalStateException(
+                "La tarea ya tiene otro identificador de motor");
+        }
+
+        this.identificadorTareaMotor = identificador;
+        this.actualizadoEn = Instantes.ahora();
+    }
+
+    public void programarVencimiento(Instant fecha) {
+        if (fecha == null) {
+            throw new IllegalArgumentException(
+                "La fecha de vencimiento es obligatoria");
+        }
+        if (estado != EstadoTareaAprobacion.PENDIENTE) {
+            throw new TransicionTareaInvalidaException(
+                "No se puede programar una tarea en estado " + estado);
+        }
+
+        this.fechaVencimiento = fecha;
+        this.actualizadoEn = Instantes.ahora();
+    }
+
     private void cambiarEstado(EstadoTareaAprobacion nuevoEstado) {
         if (estado != EstadoTareaAprobacion.PENDIENTE) {
             throw new TransicionTareaInvalidaException(

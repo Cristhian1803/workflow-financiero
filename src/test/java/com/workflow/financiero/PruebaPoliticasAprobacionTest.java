@@ -40,6 +40,8 @@ import com.workflow.financiero.infraestructura.persistencia.TareaAprobacionRepos
 import com.workflow.financiero.infraestructura.persistencia.TipoOperacionRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.UsuarioRepositorio;
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -400,6 +402,49 @@ class PruebaPoliticasAprobacionTest extends PruebaIntegracionBase {
 
         assertThat(tarea.getAsignado().getId()).isEqualTo(actor.getId());
         assertThat(tarea.getActualizadoEn()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("Asocia el identificador de motor de forma idempotente")
+    void asociaIdentificadorMotorDeFormaIdempotente() {
+        SolicitudCreada creada = crearSolicitud(
+            "1000000", NivelRiesgo.BAJO, EstadoRevision.PENDIENTE_APROBACION);
+        Rol rol = rolRepositorio.findById("SUPERVISOR").orElseThrow();
+        TareaAprobacion tarea = new TareaAprobacion(creada.revision(), rol);
+
+        tarea.asignarIdentificadorMotor("motor-1");
+        tarea.asignarIdentificadorMotor("motor-1");
+
+        assertThat(tarea.getIdentificadorTareaMotor()).isEqualTo("motor-1");
+        assertThat(tarea.getActualizadoEn()).isNotNull();
+        assertThatThrownBy(() -> tarea.asignarIdentificadorMotor("motor-2"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("otro identificador");
+        assertThatThrownBy(() -> tarea.asignarIdentificadorMotor(" "))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("Programa el vencimiento solo mientras la tarea está pendiente")
+    void programaVencimientoSoloMientrasEstaPendiente() {
+        SolicitudCreada creada = crearSolicitud(
+            "1000000", NivelRiesgo.BAJO, EstadoRevision.PENDIENTE_APROBACION);
+        Rol rol = rolRepositorio.findById("SUPERVISOR").orElseThrow();
+        TareaAprobacion tarea = new TareaAprobacion(creada.revision(), rol);
+        Instant vencimiento = Instant.now().plus(Duration.ofHours(48));
+
+        tarea.programarVencimiento(vencimiento);
+
+        assertThat(tarea.getFechaVencimiento()).isEqualTo(vencimiento);
+        assertThatThrownBy(() -> tarea.programarVencimiento(null))
+            .isInstanceOf(IllegalArgumentException.class);
+
+        tarea.marcarAprobada();
+
+        assertThatThrownBy(() -> tarea.programarVencimiento(vencimiento))
+            .isInstanceOf(TransicionTareaInvalidaException.class);
+        assertThatThrownBy(() -> tarea.asignarIdentificadorMotor("motor-2"))
+            .isInstanceOf(TransicionTareaInvalidaException.class);
     }
 
     @Test

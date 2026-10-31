@@ -87,12 +87,18 @@ La API usa JWT firmado.
 
 Solo se crean en `desarrollo` y `pruebas`:
 
-| Usuario | Clave por defecto | Roles | Perfil |
-|---|---|---|---|
-| `demo` | `demo` | `SOLICITANTE` | `NORMAL` |
-| `demo2` | `demo` | `SOLICITANTE` | `NORMAL` |
-| `auditor` | `demo` | `AUDITOR` | `NORMAL` |
-| `admin` | `demo` | `ADMINISTRADOR` | `NORMAL` |
+| Usuario | Clave por defecto | Roles | Perfil | Uso |
+|---|---|---|---|---|
+| `demo` | `demo` | `SOLICITANTE` | `NORMAL` | Solicitante |
+| `demo2` | `demo` | `SOLICITANTE` | `NORMAL` | Solicitante alternativo |
+| `auditor` | `demo` | `AUDITOR` | `NORMAL` | Auditoría |
+| `admin` | `demo` | `ADMINISTRADOR` | `NORMAL` | Administración |
+| `supervisor` | `demo` | `SUPERVISOR` | `NORMAL` | Aprobador |
+| `gerente` | `demo` | `GERENTE` | `NORMAL` | Aprobador y superior de Supervisor |
+| `riesgos` | `demo` | `RIESGOS` | `NORMAL` | Aprobador |
+| `gerente_general` | `demo` | `GERENTE_GENERAL` | `NORMAL` | Delegado de Gerente |
+| `jefe_riesgos` | `demo` | `JEFE_RIESGOS` | `NORMAL` | Delegado de Riesgos |
+| `operaciones` | `demo` | `OPERACIONES` | `NORMAL` | Consulta operativa |
 
 La clave se puede cambiar con `DEMO_CLAVE`. El sembrador es idempotente: no duplica usuarios ni sobrescribe claves existentes.
 
@@ -144,15 +150,20 @@ http://localhost:8080/swagger-ui.html
 
 ## API de solicitudes
 
-La creación requiere el rol `SOLICITANTE` y termina en `EVALUANDO_RIESGO`. No inicia el proceso BPMN ni abre tareas.
+La creación requiere el rol `SOLICITANTE` e inicia el proceso BPMN. Si el plan no requiere aprobaciones, la revisión queda en `APROBADA`; si las requiere, queda en `PENDIENTE_APROBACION` y el motor abre las tareas humanas correspondientes.
 
 | Método | Ruta | Autorización |
 |---|---|---|
 | `POST` | `/api/v1/solicitudes` | `SOLICITANTE` |
-| `GET` | `/api/v1/solicitudes/{id}` | Dueño o administrador |
+| `POST` | `/api/v1/solicitudes/{id}/reenvios` | Dueño |
+| `GET` | `/api/v1/solicitudes/{id}` | Dueño, aprobador relacionado o administrador |
 | `GET` | `/api/v1/solicitudes` | Dueño o administrador |
 | `GET` | `/api/v1/solicitudes/{id}/historial` | Dueño, auditor o administrador |
-| `GET` | `/api/v1/solicitudes/{id}/proceso` | Dueño o administrador |
+| `GET` | `/api/v1/solicitudes/{id}/proceso` | Dueño, aprobador relacionado o administrador |
+| `GET` | `/api/v1/tareas-aprobacion` | Aprobador o delegado |
+| `POST` | `/api/v1/tareas-aprobacion/{id}/aprobar` | Actor elegible |
+| `POST` | `/api/v1/tareas-aprobacion/{id}/rechazar` | Actor elegible |
+| `GET` | `/api/v1/notificaciones` | Autenticado |
 
 ### Crear
 
@@ -169,7 +180,7 @@ $creacion
 
 La respuesta `201` incluye `id`, `idRevision`, `revision`, `solicitante`, tipo, monto, moneda, descripción, justificación, `estado`, `nivelRiesgo`, `aprobacionesRequeridas`, `requiereEvaluacionExterna`, `fechaCreacion` y `fechaActualizacion`.
 
-Para 25 millones el riesgo es `BAJO` y el plan es `SUPERVISOR`. Para 100 millones el riesgo es `MEDIO` y el plan es `GERENTE` y `SUPERVISOR`. Para 250 millones el riesgo es `ALTO`, el plan incluye `GERENTE`, `RIESGOS` y `SUPERVISOR`, y `requiereEvaluacionExterna` es `true`.
+Para 5 millones el plan está vacío y la revisión termina en `APROBADA`. Para 25 millones el riesgo es `BAJO`, el plan es `SUPERVISOR` y la revisión queda en `PENDIENTE_APROBACION`. Para 100 millones el riesgo es `MEDIO` y el plan es `GERENTE` y `SUPERVISOR`. Para 250 millones el riesgo es `ALTO`, el plan incluye `GERENTE`, `RIESGOS` y `SUPERVISOR`, y `requiereEvaluacionExterna` es `true`.
 
 ### Consultar detalle
 
@@ -183,7 +194,7 @@ Invoke-RestMethod `
 
 ```powershell
 Invoke-RestMethod `
-  -Uri "http://localhost:8080/api/v1/solicitudes?pagina=0&tamano=20&estado=EVALUANDO_RIESGO" `
+  -Uri "http://localhost:8080/api/v1/solicitudes?pagina=0&tamano=20&estado=PENDIENTE_APROBACION" `
   -Headers @{ Authorization = "Bearer $($respuesta.token)" }
 ```
 
@@ -207,9 +218,136 @@ Invoke-RestMethod `
   -Headers @{ Authorization = "Bearer $($respuesta.token)" }
 ```
 
-En esta etapa responde `iniciado = false`, `identificadorProceso = null` y `tareas = []`.
+La respuesta incluye `identificadorProceso`, `iniciado`, `finalizado`, `estadoRevision`, `actividadesActivas` y `tareas`. Para una instancia activa muestra las tareas humanas con su id de negocio, rol, estado, asignado y vencimiento; para una finalizada consulta el historial y devuelve las listas vacías.
 
-Una solicitud ajena no visible responde `404`; un usuario sin el rol necesario responde `403`.
+Una solicitud ajena no visible responde `404`; un usuario sin el rol necesario responde `403`. El dueño, el administrador y un aprobador con tarea en la revisión actual pueden consultar el detalle y el proceso.
+
+### Tareas de aprobación
+
+```powershell
+$loginSupervisor = Invoke-RestMethod `
+  -Method Post `
+  -Uri http://localhost:8080/api/v1/autenticacion/iniciar-sesion `
+  -ContentType "application/json" `
+  -Body '{"usuario":"supervisor","clave":"demo"}'
+
+Invoke-RestMethod `
+  -Uri http://localhost:8080/api/v1/tareas-aprobacion `
+  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" }
+```
+
+Devuelve solo tareas `PENDIENTE` de la revisión actual visibles para el actor. Incluye las tareas asignadas y las tareas sin asignar de sus roles funcionales o delegados. El creador de la solicitud no ve sus propias tareas. Cada elemento incluye `fechaCreacion`, `fechaNotificacion` calculada con `flujo.aprobacion.notificacion` y `fechaVencimiento` guardada con `flujo.aprobacion.reasignacion`, además de los datos de la solicitud.
+
+Los plazos y superiores se configuran en `flujo.aprobacion`:
+
+```yaml
+flujo:
+  aprobacion:
+    notificacion: ${APROBACION_DURACION_NOTIFICACION:PT24H}
+    reasignacion: ${APROBACION_DURACION_REASIGNACION:PT48H}
+    superiores:
+      SUPERVISOR: GERENTE
+      GERENTE: GERENTE_GENERAL
+      RIESGOS: JEFE_RIESGOS
+```
+
+### Notificaciones
+
+Cuando una tarea de aprobación sigue pendiente al cumplirse el plazo de notificación, el proceso crea una notificación persistida para el rol funcional. La API devuelve las notificaciones dirigidas al actor o a sus roles activos, sin duplicados y ordenadas por fecha descendente.
+
+```powershell
+Invoke-RestMethod `
+  -Uri http://localhost:8080/api/v1/notificaciones `
+  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" }
+```
+
+Cada elemento incluye `id`, `tipo`, `contenido`, `estado`, `idTarea`, `idSolicitud`, `revision`, `fechaCreacion` y `fechaLectura`. En esta etapa no hay endpoint para marcar como leída ni envío de correo. Una tarea aprobada o asignada antes del vencimiento no genera la notificación de 24 horas.
+
+### Reasignación y delegación
+
+Si una tarea sigue pendiente al cumplirse el plazo de reasignación, se asigna al primer usuario activo con el rol superior configurado, ordenado por nombre de usuario. La tarea conserva su rol funcional y no se completa: solo cambia el responsable.
+
+El nuevo asignado recibe una notificación `REASIGNACION_48H` y puede resolver la tarea por delegación. La decisión conserva el rol funcional original y devuelve `delegado=true`. La bandeja muestra la tarea asignada al delegado y deja de mostrarla a los demás usuarios del rol.
+
+Si no hay un superior activo, la tarea sigue pendiente y sin asignado. Se registra el evento `REASIGNACION_FALLIDA` y se crea una notificación para el rol `ADMINISTRADOR`. El creador de la solicitud no puede aprobar aunque quede como superior asignado. La recuperación operativa y la API de incidentes son de una etapa posterior.
+
+La notificación de 24 horas no se crea si la tarea ya fue reasignada. La aprobación antes del vencimiento tampoco genera una reasignación tardía.
+
+### Aprobar y rechazar
+
+```powershell
+$loginSupervisor = Invoke-RestMethod `
+  -Method Post `
+  -Uri http://localhost:8080/api/v1/autenticacion/iniciar-sesion `
+  -ContentType "application/json" `
+  -Body '{"usuario":"supervisor","clave":"demo"}'
+
+$tarea = (Invoke-RestMethod `
+  -Uri http://localhost:8080/api/v1/tareas-aprobacion `
+  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" })[0]
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://localhost:8080/api/v1/tareas-aprobacion/$($tarea.id)/aprobar" `
+  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" } `
+  -ContentType "application/json" `
+  -Body '{"comentario":"Aprobado para continuar"}'
+```
+
+Para rechazar se usa `/rechazar` con `motivo` obligatorio:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://localhost:8080/api/v1/tareas-aprobacion/$($tarea.id)/rechazar" `
+  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" } `
+  -ContentType "application/json" `
+  -Body '{"motivo":"El monto no coincide con la documentación"}'
+```
+
+Ambas respuestas incluyen `idTarea`, `decision`, `fecha`, `estadoTarea`, `estadoRevision` y `delegado`. El id es el de la tarea de negocio, no el de Flowable.
+
+Reglas aplicadas:
+
+- El creador no puede aprobar su propia solicitud.
+- Un actor no puede aprobar dos roles funcionales distintos en la misma solicitud.
+- El mismo rol se puede repetir en otra revisión.
+- Si la tarea tiene asignado, solo el asignado puede resolverla y debe tener el rol funcional o la delegación.
+- El rol registrado es el rol funcional de la tarea, aunque actúe un superior por delegación.
+- Un rechazo cancela las demás tareas pendientes de la revisión y termina el proceso sin preparar ejecución.
+
+Errores principales: `400 DATOS_INVALIDOS`, `401 NO_AUTENTICADO`, `403 APROBACION_NO_PERMITIDA`, `403 SEGREGACION_FUNCIONES`, `404 TAREA_NO_ENCONTRADA`, `409 TAREA_YA_RESUELTA` y `409 TRANSICION_TAREA_INVALIDA`.
+
+### Rutas y aprobaciones paralelas
+
+El proceso activa solo las ramas del plan:
+
+| Monto | Riesgo | Ramas |
+|---|---|---|
+| Hasta 10 millones | Bajo o medio | Ninguna |
+| Hasta 10 millones | Alto | `RIESGOS` |
+| Hasta 50 millones | Bajo o medio | `SUPERVISOR` |
+| Hasta 50 millones | Alto | `SUPERVISOR`, `RIESGOS` |
+| Hasta 200 millones | Bajo o medio | `SUPERVISOR`, `GERENTE` |
+| Hasta 200 millones | Alto | `SUPERVISOR`, `GERENTE`, `RIESGOS` |
+| Más de 200 millones | Alto | `SUPERVISOR`, `GERENTE`, `RIESGOS` |
+
+Gerente y Riesgos son independientes y se pueden aprobar en cualquier orden. La revisión solo pasa a `APROBADA` cuando todas las ramas activadas aprobaron. Para más de 200 millones, después de las aprobaciones el proceso espera el mensaje `RIESGO_EVALUADO`; en `desarrollo` no hay una ruta HTTP para enviarlo, así que la solicitud queda en `PENDIENTE_APROBACION` hasta la integración de próximas etapas. El fixture se usa solo en pruebas automatizadas.
+
+### Reenvío
+
+Solo el dueño puede reenviar una solicitud cuya revisión actual esté `RECHAZADA`, dentro de los 30 días posteriores al rechazo y con un máximo de tres revisiones en total. El reenvío crea una revisión y un proceso nuevos, recalcula riesgo y plan y conserva el historial, las decisiones y las tareas de la revisión anterior.
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://localhost:8080/api/v1/solicitudes/$($creacion.id)/reenvios" `
+  -Headers @{ Authorization = "Bearer $($respuesta.token)" } `
+  -ContentType "application/json" `
+  -Body '{"tipoOperacion":"NORMAL","monto":75000000,"moneda":"PYG","descripcion":"Pago corregido","justificacion":"Se ajusta el monto a la documentacion"}'
+```
+
+La respuesta `201` tiene el mismo contrato que la creación, con `revision` incrementada y el `Location` de la solicitud. Errores: `400 SOLICITUD_INVALIDA`, `403 ACCESO_DENEGADO`, `404 RECURSO_NO_ENCONTRADO`, `409 CONFLICTO_DATOS` y `422 REENVIO_NO_PERMITIDO`.
 
 ## API de demostración
 
@@ -228,8 +366,12 @@ No es la API final de solicitudes.
 - Un token sigue válido hasta su vencimiento; el usuario se revalida como activo en cada consulta, pero los roles del token no cambian hasta que vence.
 - Los roles del token no cambian hasta que vence; `/autenticacion/yo` muestra los roles actuales de la base.
 - El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
-- La API de solicitudes no aprueba, rechaza, cancela, reenvía ni ejecuta operaciones.
-- La creación no inicia Flowable ni abre tareas aun.
+- La API no cancela solicitudes ni ejecuta operaciones financieras reales. El reenvío está disponible solo para el dueño y con las reglas de la sección de reenvío.
+- Las rutas combinadas, el paralelismo, el rechazo y el reenvío están implementados. La integración real de riesgo externo, la cancelación y la compensación quedan para futuras etapas.
+- La notificación de 24 horas y la reasignación de 48 horas están implementadas. No hay reasignación manual por administrador ni notificación por correo.
+- No se implementó marcar notificaciones como leídas.
+- Si el superior elegido es el creador, la tarea queda asignada a una persona que no puede aprobarla; la recuperación operativa es de una etapa posterior.
+- El creador no puede aprobar sus propias tareas.
 - El detalle recalcula el plan de aprobación con las políticas vigentes, porque el plan no se persiste.
 - El auditor puede consultar el historial, pero no el detalle ni el proceso de una solicitud ajena.
 - La API `/api/v1/solicitudes-prueba` es la demostración de prueba y no debe usarse para operaciones reales.

@@ -32,7 +32,13 @@ public class SembradorUsuariosDemo implements ApplicationRunner {
         new UsuarioDemo("demo", "Usuario Demostración", "SOLICITANTE"),
         new UsuarioDemo("demo2", "Usuario Demostración 2", "SOLICITANTE"),
         new UsuarioDemo("auditor", "Auditor", "AUDITOR"),
-        new UsuarioDemo("admin", "Administrador", "ADMINISTRADOR")
+        new UsuarioDemo("admin", "Administrador", "ADMINISTRADOR"),
+        new UsuarioDemo("supervisor", "Supervisor", "SUPERVISOR"),
+        new UsuarioDemo("gerente", "Gerente", "GERENTE"),
+        new UsuarioDemo("riesgos", "Riesgos", "RIESGOS"),
+        new UsuarioDemo("gerente_general", "Gerente general", "GERENTE_GENERAL"),
+        new UsuarioDemo("jefe_riesgos", "Jefe de riesgos", "JEFE_RIESGOS"),
+        new UsuarioDemo("operaciones", "Operaciones", "OPERACIONES")
     );
 
     private final UsuarioRepositorio usuarioRepositorio;

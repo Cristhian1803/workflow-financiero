@@ -1,0 +1,659 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+             xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC"
+             xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="http://workflow.financiero/proceso/aprobacion-financiera">
+
+    <message id="mensajeRiesgoEvaluado" name="RIESGO_EVALUADO"/>
+
+    <process id="aprobacionFinanciera" name="Aprobación financiera" isExecutable="true">
+        <documentation>
+            Orquesta la verificación, las aprobaciones y la preparación controlada de una
+            solicitud financiera. El plan de aprobación se calcula en la aplicación; el
+            proceso solo verifica sus banderas y registra el avance.
+        </documentation>
+
+        <startEvent id="inicioSolicitud" name="Inicio de la solicitud"/>
+
+        <serviceTask id="verificarSolicitud" name="Verificar información"
+                     flowable:delegateExpression="${delegadoVerificarSolicitud}">
+            <documentation>
+                Comprueba que la solicitud y la revisión existan y que sus datos
+                obligatorios estén persistidos.
+            </documentation>
+        </serviceTask>
+
+        <serviceTask id="verificarRiesgo" name="Verificar nivel de riesgo"
+                     flowable:delegateExpression="${delegadoVerificarRiesgo}">
+            <documentation>
+                Comprueba que la revisión ya tenga un nivel de riesgo clasificado.
+            </documentation>
+        </serviceTask>
+
+        <serviceTask id="verificarPlan" name="Verificar plan de aprobación"
+                     flowable:delegateExpression="${delegadoVerificarPlan}">
+            <documentation>
+                Comprueba que el plan recibido coincida con el calculado por la aplicación.
+            </documentation>
+        </serviceTask>
+
+        <exclusiveGateway id="decidirAprobaciones" name="¿Requiere aprobaciones?"
+                          default="flujoSinAprobacion"/>
+
+        <serviceTask id="marcarPendienteAprobacion" name="Marcar pendiente de aprobación"
+                     flowable:delegateExpression="${delegadoMarcarPendienteAprobacion}">
+            <documentation>
+                Deja la revisión en PENDIENTE_APROBACION antes de abrir las tareas humanas.
+            </documentation>
+        </serviceTask>
+
+        <inclusiveGateway id="ramasAprobacion" name="Ramas de aprobación"/>
+
+        <userTask id="tareaSupervisor" name="Aprobación de Supervisor"
+                  flowable:candidateGroups="SUPERVISOR">
+            <documentation>
+                Aprobación funcional del rol Supervisor. El actor debe ser distinto del
+                solicitante y no puede acumular otro rol funcional en la misma solicitud.
+            </documentation>
+        </userTask>
+
+        <userTask id="tareaGerente" name="Aprobación de Gerente"
+                  flowable:candidateGroups="GERENTE">
+            <documentation>
+                Aprobación funcional del rol Gerente. Puede delegarse en Gerente General
+                según la configuración de superiores.
+            </documentation>
+        </userTask>
+
+        <userTask id="tareaRiesgos" name="Aprobación de Riesgos"
+                  flowable:candidateGroups="RIESGOS">
+            <documentation>
+                Aprobación funcional del rol Riesgos. Puede delegarse en Jefe de Riesgos
+                según la configuración de superiores.
+            </documentation>
+        </userTask>
+
+        <exclusiveGateway id="decidirSupervisor" name="Decisión de Supervisor"/>
+        <exclusiveGateway id="decidirGerente" name="Decisión de Gerente"/>
+        <exclusiveGateway id="decidirRiesgos" name="Decisión de Riesgos"/>
+
+        <inclusiveGateway id="unionAprobaciones" name="Unión de aprobaciones"/>
+
+        <serviceTask id="verificarAutorizacion" name="Verificar autorización"
+                     flowable:delegateExpression="${delegadoVerificarAutorizacion}">
+            <documentation>
+                Vuelve a comprobar el plan, las decisiones persistidas y la segregación de
+                funciones antes de preparar cualquier ejecución.
+            </documentation>
+        </serviceTask>
+
+        <exclusiveGateway id="decidirRiesgoExterno" name="¿Requiere riesgo externo?"
+                          default="flujoSinRiesgoExterno"/>
+
+        <intermediateCatchEvent id="esperarRiesgoExterno" name="Esperar riesgo externo">
+            <messageEventDefinition messageRef="mensajeRiesgoEvaluado"/>
+        </intermediateCatchEvent>
+
+        <serviceTask id="verificarRiesgoExterno" name="Verificar riesgo externo"
+                     flowable:delegateExpression="${delegadoVerificarRiesgoExterno}">
+            <documentation>
+                Valida el resultado externo recibido antes de permitir el avance. En esta
+                etapa se usa un fixture controlado.
+            </documentation>
+        </serviceTask>
+
+        <serviceTask id="marcarAprobada" name="Marcar aprobada"
+                     flowable:delegateExpression="${delegadoMarcarAprobada}">
+            <documentation>
+                Transiciona la revisión a APROBADA. La ejecución financiera real no se
+                confirma en este proceso.
+            </documentation>
+        </serviceTask>
+
+        <serviceTask id="prepararEjecucion" name="Preparar ejecución controlada"
+                     flowable:delegateExpression="${delegadoPrepararEjecucion}">
+            <documentation>
+                Registra la preparación de la ejecución mediante un adaptador controlado,
+                sin llamar a un proveedor financiero.
+            </documentation>
+        </serviceTask>
+
+        <serviceTask id="registrarResultado" name="Registrar resultado controlado"
+                     flowable:delegateExpression="${delegadoRegistrarResultado}">
+            <documentation>
+                Registra el resultado simulado y finaliza el proceso.
+            </documentation>
+        </serviceTask>
+
+        <endEvent id="finProceso" name="Fin del proceso"/>
+
+        <serviceTask id="registrarRechazo" name="Registrar rechazo"
+                     flowable:delegateExpression="${delegadoRegistrarRechazo}">
+            <documentation>
+                Cancela las tareas pendientes de la revisión y la deja en RECHAZADA.
+            </documentation>
+        </serviceTask>
+
+        <endEvent id="finRechazo" name="Fin por rechazo">
+            <terminateEventDefinition flowable:terminateAll="true"/>
+        </endEvent>
+
+        <boundaryEvent id="notificarSupervisor24h" attachedToRef="tareaSupervisor"
+                       cancelActivity="false">
+            <timerEventDefinition>
+                <timeDuration xsi:type="tFormalExpression">${duracionNotificacion}</timeDuration>
+            </timerEventDefinition>
+        </boundaryEvent>
+
+        <boundaryEvent id="reasignarSupervisor48h" attachedToRef="tareaSupervisor"
+                       cancelActivity="false">
+            <timerEventDefinition>
+                <timeDuration xsi:type="tFormalExpression">${duracionReasignacion}</timeDuration>
+            </timerEventDefinition>
+        </boundaryEvent>
+
+        <serviceTask id="notificarSupervisor" name="Notificar escalamiento de Supervisor"
+                     flowable:delegateExpression="${delegadoNotificarEscalamiento}"/>
+
+        <serviceTask id="reasignarSupervisor" name="Reasignar tarea de Supervisor"
+                     flowable:delegateExpression="${delegadoReasignarTarea}"/>
+
+        <endEvent id="finNotificacionSupervisor" name="Fin de notificación"/>
+        <endEvent id="finReasignacionSupervisor" name="Fin de reasignación"/>
+
+        <boundaryEvent id="notificarGerente24h" attachedToRef="tareaGerente"
+                       cancelActivity="false">
+            <timerEventDefinition>
+                <timeDuration xsi:type="tFormalExpression">${duracionNotificacion}</timeDuration>
+            </timerEventDefinition>
+        </boundaryEvent>
+
+        <boundaryEvent id="reasignarGerente48h" attachedToRef="tareaGerente"
+                       cancelActivity="false">
+            <timerEventDefinition>
+                <timeDuration xsi:type="tFormalExpression">${duracionReasignacion}</timeDuration>
+            </timerEventDefinition>
+        </boundaryEvent>
+
+        <serviceTask id="notificarGerente" name="Notificar escalamiento de Gerente"
+                     flowable:delegateExpression="${delegadoNotificarEscalamiento}"/>
+
+        <serviceTask id="reasignarGerente" name="Reasignar tarea de Gerente"
+                     flowable:delegateExpression="${delegadoReasignarTarea}"/>
+
+        <endEvent id="finNotificacionGerente" name="Fin de notificación"/>
+        <endEvent id="finReasignacionGerente" name="Fin de reasignación"/>
+
+        <boundaryEvent id="notificarRiesgos24h" attachedToRef="tareaRiesgos"
+                       cancelActivity="false">
+            <timerEventDefinition>
+                <timeDuration xsi:type="tFormalExpression">${duracionNotificacion}</timeDuration>
+            </timerEventDefinition>
+        </boundaryEvent>
+
+        <boundaryEvent id="reasignarRiesgos48h" attachedToRef="tareaRiesgos"
+                       cancelActivity="false">
+            <timerEventDefinition>
+                <timeDuration xsi:type="tFormalExpression">${duracionReasignacion}</timeDuration>
+            </timerEventDefinition>
+        </boundaryEvent>
+
+        <serviceTask id="notificarRiesgos" name="Notificar escalamiento de Riesgos"
+                     flowable:delegateExpression="${delegadoNotificarEscalamiento}"/>
+
+        <serviceTask id="reasignarRiesgos" name="Reasignar tarea de Riesgos"
+                     flowable:delegateExpression="${delegadoReasignarTarea}"/>
+
+        <endEvent id="finNotificacionRiesgos" name="Fin de notificación"/>
+        <endEvent id="finReasignacionRiesgos" name="Fin de reasignación"/>
+
+        <sequenceFlow id="flujoInicio" sourceRef="inicioSolicitud" targetRef="verificarSolicitud"/>
+        <sequenceFlow id="flujoVerificarSolicitud" sourceRef="verificarSolicitud" targetRef="verificarRiesgo"/>
+        <sequenceFlow id="flujoVerificarRiesgo" sourceRef="verificarRiesgo" targetRef="verificarPlan"/>
+        <sequenceFlow id="flujoVerificarPlan" sourceRef="verificarPlan" targetRef="decidirAprobaciones"/>
+
+        <sequenceFlow id="flujoRequiereAprobacion" sourceRef="decidirAprobaciones"
+                      targetRef="marcarPendienteAprobacion">
+            <conditionExpression xsi:type="tFormalExpression">${requiereAprobacion == true}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoSinAprobacion" sourceRef="decidirAprobaciones"
+                      targetRef="verificarAutorizacion"/>
+
+        <sequenceFlow id="flujoPendienteAprobacion" sourceRef="marcarPendienteAprobacion"
+                      targetRef="ramasAprobacion"/>
+
+        <sequenceFlow id="flujoSupervisor" sourceRef="ramasAprobacion" targetRef="tareaSupervisor">
+            <conditionExpression xsi:type="tFormalExpression">${requiereSupervisor == true}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoGerente" sourceRef="ramasAprobacion" targetRef="tareaGerente">
+            <conditionExpression xsi:type="tFormalExpression">${requiereGerente == true}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoRiesgos" sourceRef="ramasAprobacion" targetRef="tareaRiesgos">
+            <conditionExpression xsi:type="tFormalExpression">${requiereRiesgos == true}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoSupervisorDecision" sourceRef="tareaSupervisor" targetRef="decidirSupervisor"/>
+        <sequenceFlow id="flujoGerenteDecision" sourceRef="tareaGerente" targetRef="decidirGerente"/>
+        <sequenceFlow id="flujoRiesgosDecision" sourceRef="tareaRiesgos" targetRef="decidirRiesgos"/>
+
+        <sequenceFlow id="flujoSupervisorAprobado" sourceRef="decidirSupervisor"
+                      targetRef="unionAprobaciones">
+            <conditionExpression xsi:type="tFormalExpression">${decisionSupervisor == 'APROBADA'}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoSupervisorRechazado" sourceRef="decidirSupervisor"
+                      targetRef="registrarRechazo">
+            <conditionExpression xsi:type="tFormalExpression">${decisionSupervisor == 'RECHAZADA'}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoGerenteAprobado" sourceRef="decidirGerente"
+                      targetRef="unionAprobaciones">
+            <conditionExpression xsi:type="tFormalExpression">${decisionGerente == 'APROBADA'}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoGerenteRechazado" sourceRef="decidirGerente"
+                      targetRef="registrarRechazo">
+            <conditionExpression xsi:type="tFormalExpression">${decisionGerente == 'RECHAZADA'}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoRiesgosAprobado" sourceRef="decidirRiesgos"
+                      targetRef="unionAprobaciones">
+            <conditionExpression xsi:type="tFormalExpression">${decisionRiesgos == 'APROBADA'}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoRiesgosRechazado" sourceRef="decidirRiesgos"
+                      targetRef="registrarRechazo">
+            <conditionExpression xsi:type="tFormalExpression">${decisionRiesgos == 'RECHAZADA'}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoUnionAprobaciones" sourceRef="unionAprobaciones"
+                      targetRef="verificarAutorizacion"/>
+
+        <sequenceFlow id="flujoVerificarAutorizacion" sourceRef="verificarAutorizacion"
+                      targetRef="decidirRiesgoExterno"/>
+
+        <sequenceFlow id="flujoRequiereRiesgoExterno" sourceRef="decidirRiesgoExterno"
+                      targetRef="esperarRiesgoExterno">
+            <conditionExpression xsi:type="tFormalExpression">${requiereEvaluacionExterna == true}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoSinRiesgoExterno" sourceRef="decidirRiesgoExterno"
+                      targetRef="marcarAprobada"/>
+
+        <sequenceFlow id="flujoEsperaRiesgoExterno" sourceRef="esperarRiesgoExterno"
+                      targetRef="verificarRiesgoExterno"/>
+
+        <sequenceFlow id="flujoVerificarRiesgoExterno" sourceRef="verificarRiesgoExterno"
+                      targetRef="marcarAprobada"/>
+
+        <sequenceFlow id="flujoMarcarAprobada" sourceRef="marcarAprobada"
+                      targetRef="prepararEjecucion"/>
+
+        <sequenceFlow id="flujoPrepararEjecucion" sourceRef="prepararEjecucion"
+                      targetRef="registrarResultado"/>
+
+        <sequenceFlow id="flujoRegistrarResultado" sourceRef="registrarResultado"
+                      targetRef="finProceso"/>
+
+        <sequenceFlow id="flujoRechazo" sourceRef="registrarRechazo" targetRef="finRechazo"/>
+
+        <sequenceFlow id="flujoNotificarSupervisor24h" sourceRef="notificarSupervisor24h"
+                      targetRef="notificarSupervisor"/>
+        <sequenceFlow id="flujoFinNotificacionSupervisor" sourceRef="notificarSupervisor"
+                      targetRef="finNotificacionSupervisor"/>
+        <sequenceFlow id="flujoReasignarSupervisor48h" sourceRef="reasignarSupervisor48h"
+                      targetRef="reasignarSupervisor"/>
+        <sequenceFlow id="flujoFinReasignacionSupervisor" sourceRef="reasignarSupervisor"
+                      targetRef="finReasignacionSupervisor"/>
+
+        <sequenceFlow id="flujoNotificarGerente24h" sourceRef="notificarGerente24h"
+                      targetRef="notificarGerente"/>
+        <sequenceFlow id="flujoFinNotificacionGerente" sourceRef="notificarGerente"
+                      targetRef="finNotificacionGerente"/>
+        <sequenceFlow id="flujoReasignarGerente48h" sourceRef="reasignarGerente48h"
+                      targetRef="reasignarGerente"/>
+        <sequenceFlow id="flujoFinReasignacionGerente" sourceRef="reasignarGerente"
+                      targetRef="finReasignacionGerente"/>
+
+        <sequenceFlow id="flujoNotificarRiesgos24h" sourceRef="notificarRiesgos24h"
+                      targetRef="notificarRiesgos"/>
+        <sequenceFlow id="flujoFinNotificacionRiesgos" sourceRef="notificarRiesgos"
+                      targetRef="finNotificacionRiesgos"/>
+        <sequenceFlow id="flujoReasignarRiesgos48h" sourceRef="reasignarRiesgos48h"
+                      targetRef="reasignarRiesgos"/>
+        <sequenceFlow id="flujoFinReasignacionRiesgos" sourceRef="reasignarRiesgos"
+                      targetRef="finReasignacionRiesgos"/>
+    </process>
+
+    <bpmndi:BPMNDiagram id="BPMNDiagram_aprobacionFinanciera">
+        <bpmndi:BPMNPlane id="BPMNPlane_aprobacionFinanciera" bpmnElement="aprobacionFinanciera">
+
+            <bpmndi:BPMNShape id="inicioSolicitud_di" bpmnElement="inicioSolicitud">
+                <omgdc:Bounds x="80" y="402" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="verificarSolicitud_di" bpmnElement="verificarSolicitud">
+                <omgdc:Bounds x="160" y="380" width="110" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="verificarRiesgo_di" bpmnElement="verificarRiesgo">
+                <omgdc:Bounds x="320" y="380" width="110" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="verificarPlan_di" bpmnElement="verificarPlan">
+                <omgdc:Bounds x="480" y="380" width="110" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="decidirAprobaciones_di" bpmnElement="decidirAprobaciones"
+                              isMarkerVisible="true">
+                <omgdc:Bounds x="640" y="395" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="marcarPendienteAprobacion_di" bpmnElement="marcarPendienteAprobacion">
+                <omgdc:Bounds x="740" y="380" width="120" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="ramasAprobacion_di" bpmnElement="ramasAprobacion">
+                <omgdc:Bounds x="910" y="395" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+
+            <bpmndi:BPMNShape id="tareaSupervisor_di" bpmnElement="tareaSupervisor">
+                <omgdc:Bounds x="1020" y="80" width="120" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="tareaGerente_di" bpmnElement="tareaGerente">
+                <omgdc:Bounds x="1020" y="380" width="120" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="tareaRiesgos_di" bpmnElement="tareaRiesgos">
+                <omgdc:Bounds x="1020" y="680" width="120" height="80"/>
+            </bpmndi:BPMNShape>
+
+            <bpmndi:BPMNShape id="decidirSupervisor_di" bpmnElement="decidirSupervisor"
+                              isMarkerVisible="true">
+                <omgdc:Bounds x="1200" y="95" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="decidirGerente_di" bpmnElement="decidirGerente"
+                              isMarkerVisible="true">
+                <omgdc:Bounds x="1200" y="395" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="decidirRiesgos_di" bpmnElement="decidirRiesgos"
+                              isMarkerVisible="true">
+                <omgdc:Bounds x="1200" y="695" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+
+            <bpmndi:BPMNShape id="unionAprobaciones_di" bpmnElement="unionAprobaciones">
+                <omgdc:Bounds x="1420" y="395" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="verificarAutorizacion_di" bpmnElement="verificarAutorizacion">
+                <omgdc:Bounds x="1520" y="380" width="130" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="decidirRiesgoExterno_di" bpmnElement="decidirRiesgoExterno"
+                              isMarkerVisible="true">
+                <omgdc:Bounds x="1700" y="395" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="esperarRiesgoExterno_di" bpmnElement="esperarRiesgoExterno">
+                <omgdc:Bounds x="1800" y="252" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="verificarRiesgoExterno_di" bpmnElement="verificarRiesgoExterno">
+                <omgdc:Bounds x="1890" y="230" width="130" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="marcarAprobada_di" bpmnElement="marcarAprobada">
+                <omgdc:Bounds x="1890" y="380" width="120" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="prepararEjecucion_di" bpmnElement="prepararEjecucion">
+                <omgdc:Bounds x="2060" y="380" width="130" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="registrarResultado_di" bpmnElement="registrarResultado">
+                <omgdc:Bounds x="2230" y="380" width="130" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="finProceso_di" bpmnElement="finProceso">
+                <omgdc:Bounds x="2410" y="402" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+
+            <bpmndi:BPMNShape id="registrarRechazo_di" bpmnElement="registrarRechazo">
+                <omgdc:Bounds x="1420" y="1000" width="130" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="finRechazo_di" bpmnElement="finRechazo">
+                <omgdc:Bounds x="1620" y="1022" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+
+            <bpmndi:BPMNShape id="notificarSupervisor24h_di" bpmnElement="notificarSupervisor24h">
+                <omgdc:Bounds x="1040" y="160" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="reasignarSupervisor48h_di" bpmnElement="reasignarSupervisor48h">
+                <omgdc:Bounds x="1100" y="160" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="notificarSupervisor_di" bpmnElement="notificarSupervisor">
+                <omgdc:Bounds x="980" y="220" width="120" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="reasignarSupervisor_di" bpmnElement="reasignarSupervisor">
+                <omgdc:Bounds x="1120" y="220" width="120" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="finNotificacionSupervisor_di" bpmnElement="finNotificacionSupervisor">
+                <omgdc:Bounds x="1022" y="330" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="finReasignacionSupervisor_di" bpmnElement="finReasignacionSupervisor">
+                <omgdc:Bounds x="1180" y="330" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+
+            <bpmndi:BPMNShape id="notificarGerente24h_di" bpmnElement="notificarGerente24h">
+                <omgdc:Bounds x="1040" y="460" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="reasignarGerente48h_di" bpmnElement="reasignarGerente48h">
+                <omgdc:Bounds x="1100" y="460" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="notificarGerente_di" bpmnElement="notificarGerente">
+                <omgdc:Bounds x="980" y="520" width="120" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="reasignarGerente_di" bpmnElement="reasignarGerente">
+                <omgdc:Bounds x="1120" y="520" width="120" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="finNotificacionGerente_di" bpmnElement="finNotificacionGerente">
+                <omgdc:Bounds x="1022" y="630" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="finReasignacionGerente_di" bpmnElement="finReasignacionGerente">
+                <omgdc:Bounds x="1180" y="630" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+
+            <bpmndi:BPMNShape id="notificarRiesgos24h_di" bpmnElement="notificarRiesgos24h">
+                <omgdc:Bounds x="1040" y="760" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="reasignarRiesgos48h_di" bpmnElement="reasignarRiesgos48h">
+                <omgdc:Bounds x="1100" y="760" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="notificarRiesgos_di" bpmnElement="notificarRiesgos">
+                <omgdc:Bounds x="980" y="820" width="120" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="reasignarRiesgos_di" bpmnElement="reasignarRiesgos">
+                <omgdc:Bounds x="1120" y="820" width="120" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="finNotificacionRiesgos_di" bpmnElement="finNotificacionRiesgos">
+                <omgdc:Bounds x="1022" y="930" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="finReasignacionRiesgos_di" bpmnElement="finReasignacionRiesgos">
+                <omgdc:Bounds x="1180" y="930" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+
+            <bpmndi:BPMNEdge id="flujoInicio_di" bpmnElement="flujoInicio">
+                <omgdi:waypoint x="116" y="420"/>
+                <omgdi:waypoint x="160" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoVerificarSolicitud_di" bpmnElement="flujoVerificarSolicitud">
+                <omgdi:waypoint x="270" y="420"/>
+                <omgdi:waypoint x="320" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoVerificarRiesgo_di" bpmnElement="flujoVerificarRiesgo">
+                <omgdi:waypoint x="430" y="420"/>
+                <omgdi:waypoint x="480" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoVerificarPlan_di" bpmnElement="flujoVerificarPlan">
+                <omgdi:waypoint x="590" y="420"/>
+                <omgdi:waypoint x="640" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoRequiereAprobacion_di" bpmnElement="flujoRequiereAprobacion">
+                <omgdi:waypoint x="690" y="420"/>
+                <omgdi:waypoint x="740" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoSinAprobacion_di" bpmnElement="flujoSinAprobacion">
+                <omgdi:waypoint x="665" y="395"/>
+                <omgdi:waypoint x="665" y="40"/>
+                <omgdi:waypoint x="1585" y="40"/>
+                <omgdi:waypoint x="1585" y="380"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoPendienteAprobacion_di" bpmnElement="flujoPendienteAprobacion">
+                <omgdi:waypoint x="860" y="420"/>
+                <omgdi:waypoint x="910" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoSupervisor_di" bpmnElement="flujoSupervisor">
+                <omgdi:waypoint x="935" y="395"/>
+                <omgdi:waypoint x="935" y="120"/>
+                <omgdi:waypoint x="1020" y="120"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoGerente_di" bpmnElement="flujoGerente">
+                <omgdi:waypoint x="960" y="420"/>
+                <omgdi:waypoint x="1020" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoRiesgos_di" bpmnElement="flujoRiesgos">
+                <omgdi:waypoint x="935" y="445"/>
+                <omgdi:waypoint x="935" y="720"/>
+                <omgdi:waypoint x="1020" y="720"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoSupervisorDecision_di" bpmnElement="flujoSupervisorDecision">
+                <omgdi:waypoint x="1140" y="120"/>
+                <omgdi:waypoint x="1200" y="120"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoGerenteDecision_di" bpmnElement="flujoGerenteDecision">
+                <omgdi:waypoint x="1140" y="420"/>
+                <omgdi:waypoint x="1200" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoRiesgosDecision_di" bpmnElement="flujoRiesgosDecision">
+                <omgdi:waypoint x="1140" y="720"/>
+                <omgdi:waypoint x="1200" y="720"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoSupervisorAprobado_di" bpmnElement="flujoSupervisorAprobado">
+                <omgdi:waypoint x="1250" y="120"/>
+                <omgdi:waypoint x="1445" y="120"/>
+                <omgdi:waypoint x="1445" y="395"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoSupervisorRechazado_di" bpmnElement="flujoSupervisorRechazado">
+                <omgdi:waypoint x="1250" y="120"/>
+                <omgdi:waypoint x="1300" y="120"/>
+                <omgdi:waypoint x="1300" y="1040"/>
+                <omgdi:waypoint x="1420" y="1040"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoGerenteAprobado_di" bpmnElement="flujoGerenteAprobado">
+                <omgdi:waypoint x="1250" y="420"/>
+                <omgdi:waypoint x="1420" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoGerenteRechazado_di" bpmnElement="flujoGerenteRechazado">
+                <omgdi:waypoint x="1250" y="420"/>
+                <omgdi:waypoint x="1330" y="420"/>
+                <omgdi:waypoint x="1330" y="1040"/>
+                <omgdi:waypoint x="1420" y="1040"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoRiesgosAprobado_di" bpmnElement="flujoRiesgosAprobado">
+                <omgdi:waypoint x="1250" y="720"/>
+                <omgdi:waypoint x="1445" y="720"/>
+                <omgdi:waypoint x="1445" y="445"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoRiesgosRechazado_di" bpmnElement="flujoRiesgosRechazado">
+                <omgdi:waypoint x="1250" y="720"/>
+                <omgdi:waypoint x="1360" y="720"/>
+                <omgdi:waypoint x="1360" y="1040"/>
+                <omgdi:waypoint x="1420" y="1040"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoUnionAprobaciones_di" bpmnElement="flujoUnionAprobaciones">
+                <omgdi:waypoint x="1470" y="420"/>
+                <omgdi:waypoint x="1520" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoVerificarAutorizacion_di" bpmnElement="flujoVerificarAutorizacion">
+                <omgdi:waypoint x="1650" y="420"/>
+                <omgdi:waypoint x="1700" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoRequiereRiesgoExterno_di" bpmnElement="flujoRequiereRiesgoExterno">
+                <omgdi:waypoint x="1725" y="395"/>
+                <omgdi:waypoint x="1725" y="270"/>
+                <omgdi:waypoint x="1800" y="270"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoSinRiesgoExterno_di" bpmnElement="flujoSinRiesgoExterno">
+                <omgdi:waypoint x="1750" y="420"/>
+                <omgdi:waypoint x="1890" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoEsperaRiesgoExterno_di" bpmnElement="flujoEsperaRiesgoExterno">
+                <omgdi:waypoint x="1836" y="270"/>
+                <omgdi:waypoint x="1890" y="270"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoVerificarRiesgoExterno_di" bpmnElement="flujoVerificarRiesgoExterno">
+                <omgdi:waypoint x="1955" y="310"/>
+                <omgdi:waypoint x="1955" y="380"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoMarcarAprobada_di" bpmnElement="flujoMarcarAprobada">
+                <omgdi:waypoint x="2010" y="420"/>
+                <omgdi:waypoint x="2060" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoPrepararEjecucion_di" bpmnElement="flujoPrepararEjecucion">
+                <omgdi:waypoint x="2190" y="420"/>
+                <omgdi:waypoint x="2230" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoRegistrarResultado_di" bpmnElement="flujoRegistrarResultado">
+                <omgdi:waypoint x="2360" y="420"/>
+                <omgdi:waypoint x="2410" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoRechazo_di" bpmnElement="flujoRechazo">
+                <omgdi:waypoint x="1550" y="1040"/>
+                <omgdi:waypoint x="1620" y="1040"/>
+            </bpmndi:BPMNEdge>
+
+            <bpmndi:BPMNEdge id="flujoNotificarSupervisor24h_di" bpmnElement="flujoNotificarSupervisor24h">
+                <omgdi:waypoint x="1058" y="196"/>
+                <omgdi:waypoint x="1040" y="220"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoFinNotificacionSupervisor_di" bpmnElement="flujoFinNotificacionSupervisor">
+                <omgdi:waypoint x="1040" y="300"/>
+                <omgdi:waypoint x="1040" y="330"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoReasignarSupervisor48h_di" bpmnElement="flujoReasignarSupervisor48h">
+                <omgdi:waypoint x="1118" y="196"/>
+                <omgdi:waypoint x="1180" y="220"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoFinReasignacionSupervisor_di" bpmnElement="flujoFinReasignacionSupervisor">
+                <omgdi:waypoint x="1180" y="300"/>
+                <omgdi:waypoint x="1198" y="330"/>
+            </bpmndi:BPMNEdge>
+
+            <bpmndi:BPMNEdge id="flujoNotificarGerente24h_di" bpmnElement="flujoNotificarGerente24h">
+                <omgdi:waypoint x="1058" y="496"/>
+                <omgdi:waypoint x="1040" y="520"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoFinNotificacionGerente_di" bpmnElement="flujoFinNotificacionGerente">
+                <omgdi:waypoint x="1040" y="600"/>
+                <omgdi:waypoint x="1040" y="630"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoReasignarGerente48h_di" bpmnElement="flujoReasignarGerente48h">
+                <omgdi:waypoint x="1118" y="496"/>
+                <omgdi:waypoint x="1180" y="520"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoFinReasignacionGerente_di" bpmnElement="flujoFinReasignacionGerente">
+                <omgdi:waypoint x="1180" y="600"/>
+                <omgdi:waypoint x="1198" y="630"/>
+            </bpmndi:BPMNEdge>
+
+            <bpmndi:BPMNEdge id="flujoNotificarRiesgos24h_di" bpmnElement="flujoNotificarRiesgos24h">
+                <omgdi:waypoint x="1058" y="796"/>
+                <omgdi:waypoint x="1040" y="820"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoFinNotificacionRiesgos_di" bpmnElement="flujoFinNotificacionRiesgos">
+                <omgdi:waypoint x="1040" y="900"/>
+                <omgdi:waypoint x="1040" y="930"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoReasignarRiesgos48h_di" bpmnElement="flujoReasignarRiesgos48h">
+                <omgdi:waypoint x="1118" y="796"/>
+                <omgdi:waypoint x="1180" y="820"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoFinReasignacionRiesgos_di" bpmnElement="flujoFinReasignacionRiesgos">
+                <omgdi:waypoint x="1180" y="900"/>
+                <omgdi:waypoint x="1198" y="930"/>
+            </bpmndi:BPMNEdge>
+
+        </bpmndi:BPMNPlane>
+    </bpmndi:BPMNDiagram>
+</definitions>

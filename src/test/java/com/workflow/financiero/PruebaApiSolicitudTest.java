@@ -21,6 +21,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.flowable.engine.HistoryService;
+import org.flowable.engine.RuntimeService;
+import org.flowable.engine.TaskService;
+import org.flowable.engine.history.HistoricProcessInstance;
+import org.flowable.engine.runtime.ProcessInstance;
+import org.flowable.task.api.Task;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,7 +50,8 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
 
     private static final String RUTA = "/api/v1/solicitudes";
     private static final String USUARIOS_DEMO =
-        "'demo', 'demo2', 'auditor', 'admin'";
+        "'demo', 'demo2', 'auditor', 'admin', 'supervisor', 'gerente', "
+            + "'riesgos', 'gerente_general', 'jefe_riesgos', 'operaciones'";
 
     @Autowired
     MockMvc mockMvc;
@@ -61,8 +68,18 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
     @Autowired
     ServicioAutenticacion servicioAutenticacion;
 
+    @Autowired
+    RuntimeService runtimeService;
+
+    @Autowired
+    TaskService taskService;
+
+    @Autowired
+    HistoryService historyService;
+
     @BeforeEach
     void preparar() {
+        limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
         sembrador.sembrar();
         activarUsuariosDemo();
@@ -70,12 +87,13 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
 
     @AfterEach
     void limpiar() {
+        limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
         activarUsuariosDemo();
     }
 
     @Test
-    @DisplayName("Crear 5 millones deja la solicitud en EVALUANDO_RIESGO sin aprobaciones")
+    @DisplayName("Crear 5 millones deja la solicitud APROBADA y el proceso finalizado")
     void creaCincoMillonesSinAprobaciones() throws Exception {
         MvcResult resultado = crearResultado("demo", peticion(5_000_000, "NORMAL"));
         JsonNode cuerpo = leer(resultado);
@@ -89,7 +107,7 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
         assertThat(cuerpo.get("tipoOperacion").asText()).isEqualTo("NORMAL");
         assertThat(cuerpo.get("monto").asLong()).isEqualTo(5_000_000L);
         assertThat(cuerpo.get("moneda").asText()).isEqualTo("PYG");
-        assertThat(cuerpo.get("estado").asText()).isEqualTo("EVALUANDO_RIESGO");
+        assertThat(cuerpo.get("estado").asText()).isEqualTo("APROBADA");
         assertThat(cuerpo.get("nivelRiesgo").asText()).isEqualTo("BAJO");
         assertThat(cuerpo.get("aprobacionesRequeridas")).isEmpty();
         assertThat(cuerpo.get("requiereEvaluacionExterna").asBoolean()).isFalse();
@@ -97,11 +115,24 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
         assertThat(cuerpo.get("fechaActualizacion").asText()).isNotBlank();
 
         String solicitudId = cuerpo.get("id").asText();
-        assertThat(estadoRevision(solicitudId)).isEqualTo(EstadoRevision.EVALUANDO_RIESGO);
+        assertThat(estadoRevision(solicitudId)).isEqualTo(EstadoRevision.APROBADA);
         assertThat(nivelRiesgo(solicitudId)).isEqualTo(NivelRiesgo.BAJO);
-        assertThat(identificadorProceso(solicitudId)).isNull();
-        assertThat(contarEventos(solicitudId)).isEqualTo(5);
+        String procesoId = identificadorProceso(solicitudId);
+        assertThat(procesoId).isNotBlank();
+        assertThat(contarEventos(solicitudId)).isEqualTo(9);
+        assertThat(tiposEvento(solicitudId))
+            .contains("PROCESO_INICIADO", "EJECUCION_PREPARADA", "EJECUCION_CONTROLADA");
         assertThat(contarTareasAprobacion(solicitudId)).isZero();
+        assertThat(runtimeService.createProcessInstanceQuery()
+            .processInstanceId(procesoId)
+            .count()).isZero();
+
+        HistoricProcessInstance historica = historyService
+            .createHistoricProcessInstanceQuery()
+            .processInstanceId(procesoId)
+            .singleResult();
+        assertThat(historica).isNotNull();
+        assertThat(historica.getEndTime()).isNotNull();
     }
 
     @Test
@@ -111,11 +142,18 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
         assertThat(roles(veinticinco))
             .containsExactly("SUPERVISOR");
         assertThat(veinticinco.get("nivelRiesgo").asText()).isEqualTo("BAJO");
+        assertThat(veinticinco.get("estado").asText())
+            .isEqualTo("PENDIENTE_APROBACION");
+        assertThat(contarTareasAprobacion(veinticinco.get("id").asText()))
+            .isEqualTo(1);
 
         JsonNode cien = crear("demo", peticion(100_000_000, "NORMAL"));
         assertThat(roles(cien))
             .containsExactlyInAnyOrder("SUPERVISOR", "GERENTE");
         assertThat(cien.get("nivelRiesgo").asText()).isEqualTo("MEDIO");
+        assertThat(cien.get("estado").asText()).isEqualTo("PENDIENTE_APROBACION");
+        assertThat(contarTareasAprobacion(cien.get("id").asText()))
+            .isEqualTo(2);
 
         JsonNode doscientosCincuenta = crear(
             "demo", peticion(250_000_000, "NORMAL"));
@@ -125,10 +163,14 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
             .isEqualTo("ALTO");
         assertThat(doscientosCincuenta.get("requiereEvaluacionExterna").asBoolean())
             .isTrue();
+        assertThat(doscientosCincuenta.get("estado").asText())
+            .isEqualTo("PENDIENTE_APROBACION");
+        assertThat(contarTareasAprobacion(doscientosCincuenta.get("id").asText()))
+            .isEqualTo(3);
         assertThat(contarEventos(doscientosCincuenta.get("id").asText()))
-            .isEqualTo(6);
+            .isEqualTo(8);
         assertThat(tiposEvento(doscientosCincuenta.get("id").asText()))
-            .contains("EVALUACION_EXTERNA_PENDIENTE");
+            .contains("EVALUACION_EXTERNA_PENDIENTE", "PROCESO_INICIADO");
     }
 
     @Test
@@ -156,17 +198,36 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
     }
 
     @Test
-    @DisplayName("La creación no inicia Flowable ni abre tareas")
-    void noIniciaProcesoNiAbreTareas() throws Exception {
-        Long tareasAntes = contarTabla("act_ru_task");
-        Long ejecucionesAntes = contarTabla("act_ru_execution");
-
+    @DisplayName("La creación inicia el proceso y abre la tarea de Supervisor")
+    void iniciaProcesoYAbreTareaSupervisor() throws Exception {
         JsonNode cuerpo = crear("demo", peticion(25_000_000, "NORMAL"));
+        String solicitudId = cuerpo.get("id").asText();
+        String revisionId = cuerpo.get("idRevision").asText();
 
-        assertThat(contarTabla("act_ru_task")).isEqualTo(tareasAntes);
-        assertThat(contarTabla("act_ru_execution")).isEqualTo(ejecucionesAntes);
-        assertThat(identificadorProceso(cuerpo.get("id").asText())).isNull();
-        assertThat(contarTareasAprobacion(cuerpo.get("id").asText())).isZero();
+        String procesoId = identificadorProceso(solicitudId);
+        assertThat(procesoId).isNotBlank();
+
+        ProcessInstance proceso = runtimeService.createProcessInstanceQuery()
+            .processInstanceBusinessKey(revisionId)
+            .singleResult();
+        assertThat(proceso).isNotNull();
+        assertThat(proceso.getId()).isEqualTo(procesoId);
+        assertThat(proceso.isEnded()).isFalse();
+
+        Task tarea = taskService.createTaskQuery()
+            .processInstanceId(procesoId)
+            .singleResult();
+        assertThat(tarea).isNotNull();
+        assertThat(tarea.getTaskDefinitionKey()).isEqualTo("tareaSupervisor");
+        assertThat(tarea.getName()).isEqualTo("Aprobación de Supervisor");
+
+        Map<String, Object> tareaNegocio = tareaAprobacion(solicitudId, "SUPERVISOR");
+        assertThat(contarTareasAprobacion(solicitudId)).isEqualTo(1);
+        assertThat(tareaNegocio.get("tareapro_identificador_tarea_motor"))
+            .isEqualTo(tarea.getId());
+        assertThat(tareaNegocio.get("tareapro_estado")).isEqualTo("PENDIENTE");
+        assertThat(tareaNegocio.get("tareapro_fecha_vencimiento")).isNotNull();
+        assertThat(tareaNegocio.get("tareapro_asignado_usua_id")).isNull();
     }
 
     @Test
@@ -191,6 +252,7 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
 
             assertThat(contarSolicitudes()).isZero();
             assertThat(contarEventosTotales()).isZero();
+            assertThat(contarInstanciasProceso()).isZero();
         }
     }
 
@@ -291,12 +353,17 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
         mockMvc.perform(conToken(get(RUTA)
                 .param("estado", "EVALUANDO_RIESGO"), token("demo")))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.totalElementos").value(3));
+            .andExpect(jsonPath("$.totalElementos").value(0));
+
+        mockMvc.perform(conToken(get(RUTA)
+                .param("estado", "PENDIENTE_APROBACION"), token("demo")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.totalElementos").value(2));
 
         mockMvc.perform(conToken(get(RUTA)
                 .param("estado", "APROBADA"), token("demo")))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.totalElementos").value(0));
+            .andExpect(jsonPath("$.totalElementos").value(1));
 
         mockMvc.perform(conToken(get(RUTA)
                 .param("pagina", "-1"), token("demo")))
@@ -342,7 +409,8 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
             "SOLICITUD_CREADA",
             "CAMBIO_ESTADO",
             "RIESGO_CLASIFICADO",
-            "PLAN_APROBACION_CALCULADO"
+            "PLAN_APROBACION_CALCULADO",
+            "PROCESO_INICIADO"
         );
 
         JsonNode creada = null;
@@ -370,8 +438,8 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
     }
 
     @Test
-    @DisplayName("El proceso responde iniciado false y sin tareas")
-    void procesoNoIniciado() throws Exception {
+    @DisplayName("El proceso activo informa actividades y tareas del motor")
+    void procesoActivoInformaTareasDelMotor() throws Exception {
         JsonNode creada = crear("demo", peticion(25_000_000, "NORMAL"));
         String id = creada.get("id").asText();
 
@@ -379,11 +447,18 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.idSolicitud").value(id))
             .andExpect(jsonPath("$.revision").value(1))
-            .andExpect(jsonPath("$.identificadorProceso").doesNotExist())
-            .andExpect(jsonPath("$.iniciado").value(false))
+            .andExpect(jsonPath("$.identificadorProceso").isNotEmpty())
+            .andExpect(jsonPath("$.iniciado").value(true))
             .andExpect(jsonPath("$.finalizado").value(false))
-            .andExpect(jsonPath("$.estadoRevision").value("EVALUANDO_RIESGO"))
-            .andExpect(jsonPath("$.tareas").isEmpty());
+            .andExpect(jsonPath("$.estadoRevision").value("PENDIENTE_APROBACION"))
+            .andExpect(jsonPath("$.actividadesActivas[0]").value("tareaSupervisor"))
+            .andExpect(jsonPath("$.tareas.length()").value(1))
+            .andExpect(jsonPath("$.tareas[0].rol").value("SUPERVISOR"))
+            .andExpect(jsonPath("$.tareas[0].nombre")
+                .value("Aprobación de Supervisor"))
+            .andExpect(jsonPath("$.tareas[0].estado").value("PENDIENTE"))
+            .andExpect(jsonPath("$.tareas[0].asignadoA").doesNotExist())
+            .andExpect(jsonPath("$.tareas[0].fechaVencimiento").isNotEmpty());
 
         mockMvc.perform(conToken(get(RUTA + "/" + id + "/proceso"), token("admin")))
             .andExpect(status().isOk());
@@ -391,6 +466,22 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
             .andExpect(status().isNotFound());
         mockMvc.perform(conToken(get(RUTA + "/" + id + "/proceso"), token("auditor")))
             .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("El proceso finalizado se consulta desde el historial")
+    void procesoFinalizadoSeConsultaDesdeElHistorial() throws Exception {
+        JsonNode creada = crear("demo", peticion(5_000_000, "NORMAL"));
+        String id = creada.get("id").asText();
+
+        mockMvc.perform(conToken(get(RUTA + "/" + id + "/proceso"), token("demo")))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.identificadorProceso").isNotEmpty())
+            .andExpect(jsonPath("$.iniciado").value(true))
+            .andExpect(jsonPath("$.finalizado").value(true))
+            .andExpect(jsonPath("$.estadoRevision").value("APROBADA"))
+            .andExpect(jsonPath("$.actividadesActivas").isEmpty())
+            .andExpect(jsonPath("$.tareas").isEmpty());
     }
 
     @Test
@@ -448,7 +539,7 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
 
         JsonNode respuesta = crear("demo", cuerpo);
         assertThat(respuesta.get("solicitante").asText()).isEqualTo("demo");
-        assertThat(respuesta.get("estado").asText()).isEqualTo("EVALUANDO_RIESGO");
+        assertThat(respuesta.get("estado").asText()).isEqualTo("PENDIENTE_APROBACION");
         assertThat(respuesta.get("nivelRiesgo").asText()).isEqualTo("ALTO");
     }
 
@@ -608,9 +699,37 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
             UUID.fromString(solicitudId));
     }
 
-    private Long contarTabla(String tabla) {
-        return jdbcTemplate.queryForObject(
-            "SELECT COUNT(*) FROM " + tabla, Long.class);
+    private Map<String, Object> tareaAprobacion(String solicitudId, String rol) {
+        return jdbcTemplate.queryForMap(
+            "SELECT t.tareapro_id, t.tareapro_identificador_tarea_motor, "
+                + "t.tareapro_estado, t.tareapro_fecha_vencimiento, "
+                + "t.tareapro_asignado_usua_id "
+                + "FROM tarea_aprobacion t "
+                + "JOIN revision_solicitud r "
+                + "ON r.revisoli_id = t.tareapro_revisoli_id "
+                + "WHERE r.revisoli_solifina_id = ? "
+                + "AND t.tareapro_rol_codigo = ?",
+            UUID.fromString(solicitudId),
+            rol);
+    }
+
+    private Long contarInstanciasProceso() {
+        return runtimeService.createProcessInstanceQuery()
+            .processDefinitionKey("aprobacionFinanciera")
+            .count();
+    }
+
+    private void limpiarProcesos() {
+        runtimeService.createProcessInstanceQuery()
+            .processDefinitionKey("aprobacionFinanciera")
+            .list()
+            .forEach(proceso -> runtimeService.deleteProcessInstance(
+                proceso.getId(), "Limpieza de prueba"));
+        historyService.createHistoricProcessInstanceQuery()
+            .processDefinitionKey("aprobacionFinanciera")
+            .list()
+            .forEach(proceso -> historyService.deleteHistoricProcessInstance(
+                proceso.getId()));
     }
 
     private void activarUsuariosDemo() {
