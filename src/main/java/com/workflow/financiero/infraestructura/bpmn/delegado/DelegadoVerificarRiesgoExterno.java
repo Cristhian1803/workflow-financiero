@@ -15,10 +15,8 @@ public class DelegadoVerificarRiesgoExterno implements JavaDelegate {
     @Override
     public void execute(DelegateExecution ejecucion) {
         servicioRiesgoExterno.verificar(
-            VariablesProceso.uuid(ejecucion, "solicitudId"),
             VariablesProceso.uuid(ejecucion, "revisionId"),
-            VariablesProceso.booleano(ejecucion, "riesgoExternoResuelto"),
-            VariablesProceso.texto(ejecucion, "nivelRiesgoExterno"),
+            VariablesProceso.texto(ejecucion, "identificadorEventoExterno"),
             VariablesProceso.texto(ejecucion, "correlacion")
         );
     }

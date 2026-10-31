@@ -23,6 +23,7 @@ public class ProgramadorEjecucion {
     private final TrabajadorEjecucion trabajador;
     private final TrabajadorRecuperacionEjecucion recuperador;
     private final TrabajadorCompensacion compensador;
+    private final TrabajadorRiesgoExterno riesgoExterno;
 
     @Scheduled(
         fixedDelayString = "${ejecucion.trabajador.intervalo-ms:2000}"
@@ -31,13 +32,16 @@ public class ProgramadorEjecucion {
         int procesadas = trabajador.ejecutarPendientes();
         int recuperadas = recuperador.reconciliarPendientes();
         int compensadas = compensador.procesarPendientes();
-        if (procesadas > 0 || recuperadas > 0 || compensadas > 0) {
+        int riesgos = riesgoExterno.procesarPendientes();
+        if (procesadas > 0 || recuperadas > 0 || compensadas > 0
+            || riesgos > 0) {
             log.info(
-                "Se procesaron {} intenciones, se reconciliaron {} y se "
-                    + "compensaron {}",
+                "Se procesaron {} intenciones, se reconciliaron {}, se "
+                    + "compensaron {} y se procesaron {} eventos de riesgo",
                 procesadas,
                 recuperadas,
-                compensadas
+                compensadas,
+                riesgos
             );
         }
     }
