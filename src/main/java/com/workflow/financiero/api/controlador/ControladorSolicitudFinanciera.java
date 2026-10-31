@@ -1,6 +1,8 @@
 package com.workflow.financiero.api.controlador;
 
 import com.workflow.financiero.api.contrato.error.ErrorApiRespuesta;
+import com.workflow.financiero.api.contrato.solicitud.CancelacionRespuesta;
+import com.workflow.financiero.api.contrato.solicitud.CancelarSolicitudPeticion;
 import com.workflow.financiero.api.contrato.solicitud.CrearSolicitudPeticion;
 import com.workflow.financiero.api.contrato.solicitud.EventoHistorialRespuesta;
 import com.workflow.financiero.api.contrato.solicitud.PaginaRespuesta;
@@ -13,6 +15,8 @@ import com.workflow.financiero.aplicacion.servicio.CrearSolicitudComando;
 import com.workflow.financiero.aplicacion.servicio.EstadoProceso;
 import com.workflow.financiero.aplicacion.servicio.EventoHistorial;
 import com.workflow.financiero.aplicacion.servicio.PaginaSolicitudes;
+import com.workflow.financiero.aplicacion.servicio.ResultadoCancelacionSolicitud;
+import com.workflow.financiero.aplicacion.servicio.ServicioCancelacionSolicitud;
 import com.workflow.financiero.aplicacion.servicio.ServicioConsultaSolicitud;
 import com.workflow.financiero.aplicacion.servicio.ServicioReenvioSolicitud;
 import com.workflow.financiero.aplicacion.servicio.ServicioRegistroSolicitud;
@@ -38,6 +42,7 @@ import java.security.Principal;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -61,6 +66,7 @@ public class ControladorSolicitudFinanciera {
     private final ServicioRegistroSolicitud servicioRegistro;
     private final ServicioReenvioSolicitud servicioReenvio;
     private final ServicioConsultaSolicitud servicioConsulta;
+    private final ServicioCancelacionSolicitud servicioCancelacion;
 
     @PostMapping
     @Operation(
@@ -160,6 +166,61 @@ public class ControladorSolicitudFinanciera {
         return ResponseEntity
             .created(URI.create("/api/v1/solicitudes/" + detalle.id()))
             .body(respuesta(detalle));
+    }
+
+    @PostMapping("/{id}/cancelar")
+    @Operation(
+        summary = "Cancelar una solicitud",
+        description = "Solo el dueño o un administrador pueden cancelar. Si no "
+            + "hay reserva, la revisión queda CANCELADA. Si hay reserva y la "
+            + "confirmación no fue despachada, se libera antes de declarar "
+            + "CANCELADA. Después de una confirmación efectiva responde 409. "
+            + "Si la liberación no se puede confirmar, responde 202 y deja la "
+            + "revisión en COMPENSANDO."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Solicitud cancelada"),
+        @ApiResponse(responseCode = "202", description = "Compensación pendiente"),
+        @ApiResponse(responseCode = "400", description = "Motivo inválido",
+            content = @Content(schema = @Schema(implementation = ErrorApiRespuesta.class))),
+        @ApiResponse(responseCode = "401", description = "No autenticado",
+            content = @Content(schema = @Schema(implementation = ErrorApiRespuesta.class))),
+        @ApiResponse(responseCode = "403", description = "Sin permiso",
+            content = @Content(schema = @Schema(implementation = ErrorApiRespuesta.class))),
+        @ApiResponse(responseCode = "404", description = "No encontrada o no visible",
+            content = @Content(schema = @Schema(implementation = ErrorApiRespuesta.class))),
+        @ApiResponse(responseCode = "409", description = "Cancelación no permitida",
+            content = @Content(schema = @Schema(implementation = ErrorApiRespuesta.class))),
+        @ApiResponse(responseCode = "500", description = "Error inesperado",
+            content = @Content(schema = @Schema(implementation = ErrorApiRespuesta.class)))
+    })
+    ResponseEntity<CancelacionRespuesta> cancelar(
+        @Parameter(description = "Identificador de la solicitud")
+        @PathVariable UUID id,
+        @Valid @RequestBody CancelarSolicitudPeticion peticion,
+        Principal principal,
+        HttpServletRequest peticionHttp
+    ) {
+        UsuarioActual actual = servicioUsuarioActual.obtenerActual(
+            principal.getName());
+        ResultadoCancelacionSolicitud resultado = servicioCancelacion.cancelar(
+            id,
+            actual,
+            peticion.motivo(),
+            Correlacion.obtener(peticionHttp)
+        );
+
+        boolean compensacionPendiente =
+            resultado.estadoRevision() == EstadoRevision.COMPENSANDO;
+        HttpStatus estado = compensacionPendiente
+            ? HttpStatus.ACCEPTED
+            : HttpStatus.OK;
+        return ResponseEntity.status(estado).body(new CancelacionRespuesta(
+            resultado.idSolicitud(),
+            resultado.idRevision(),
+            resultado.estadoRevision(),
+            compensacionPendiente
+        ));
     }
 
     @GetMapping("/{id}")

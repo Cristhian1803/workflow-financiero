@@ -26,6 +26,7 @@ public enum CodigoError {
     INCIDENTE_NO_ENCONTRADO(HttpStatus.NOT_FOUND, "Incidente no encontrado"),
     REINTENTO_NO_PERMITIDO(HttpStatus.CONFLICT, "Reintento no permitido"),
     EJECUCION_NO_PERMITIDA(HttpStatus.CONFLICT, "Ejecución no permitida"),
+    CANCELACION_NO_PERMITIDA(HttpStatus.CONFLICT, "Cancelación no permitida"),
     REENVIO_NO_PERMITIDO(HttpStatus.UNPROCESSABLE_ENTITY, "Reenvío no permitido"),
     SERVICIO_NO_DISPONIBLE(
         HttpStatus.SERVICE_UNAVAILABLE,

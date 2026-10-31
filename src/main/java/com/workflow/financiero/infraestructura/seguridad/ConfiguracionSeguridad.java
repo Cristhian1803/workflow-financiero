@@ -93,6 +93,10 @@ public class ConfiguracionSeguridad {
                     "/api/v1/solicitudes"
                 ).hasRole("SOLICITANTE");
                 autorizacion.requestMatchers(
+                    HttpMethod.POST,
+                    "/api/v1/solicitudes/*/cancelar"
+                ).hasAnyRole("SOLICITANTE", "ADMINISTRADOR");
+                autorizacion.requestMatchers(
                     HttpMethod.GET,
                     "/api/v1/tareas-aprobacion"
                 ).hasAnyRole(ROLES_APROBACION);

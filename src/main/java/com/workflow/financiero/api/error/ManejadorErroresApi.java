@@ -4,6 +4,7 @@ import com.workflow.financiero.aplicacion.excepcion.ConflictoProveedorFinanciero
 import com.workflow.financiero.aplicacion.excepcion.CredencialesInvalidasException;
 import com.workflow.financiero.dominio.excepcion.AccesoDenegadoException;
 import com.workflow.financiero.dominio.excepcion.AprobacionNoPermitidaException;
+import com.workflow.financiero.dominio.excepcion.CancelacionNoPermitidaException;
 import com.workflow.financiero.dominio.excepcion.DecisionInvalidaException;
 import com.workflow.financiero.dominio.excepcion.EjecucionNoPermitidaException;
 import com.workflow.financiero.dominio.excepcion.IncidenteNoEncontradoException;
@@ -261,6 +262,18 @@ public class ManejadorErroresApi {
     ) {
         return respuesta(
             CodigoError.EJECUCION_NO_PERMITIDA,
+            excepcion.getMessage(),
+            peticion
+        );
+    }
+
+    @ExceptionHandler(CancelacionNoPermitidaException.class)
+    ResponseEntity<ProblemDetail> cancelacionNoPermitida(
+        CancelacionNoPermitidaException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.CANCELACION_NO_PERMITIDA,
             excepcion.getMessage(),
             peticion
         );
