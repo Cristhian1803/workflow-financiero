@@ -144,6 +144,18 @@ Traducción de errores:
 El adaptador no reintenta automáticamente. La política de reintentos y
 reconciliación pertenece al trabajador de ejecución.
 
+## Uso desde la aplicación
+
+Antes de llamar al proveedor, la aplicación persiste `intento_ejecucion` con la
+clave financiera `solicitudId:numeroRevision` y la huella de la confirmación. El
+trabajador reclama esa intención, reserva y confirma con las claves de acción
+estables y registra el resultado en otra transacción corta.
+
+La reserva y la confirmación se envían con la misma identidad y los mismos
+parámetros. Si el trabajador se reinicia después de reclamar, la intención queda
+`ENVIANDO`; la reconciliación y los incidentes se implementan en la sesión
+siguiente. No se cambia la clave ni la huella para reintentar.
+
 ## Configuración
 
 ```yaml

@@ -33,12 +33,20 @@ Cada rama tiene su propia variable de decisión: `decisionSupervisor`, `decision
    de pruebas envía `riesgoExternoResuelto=true` y `nivelRiesgoExterno`; el delegate registra
    `EVALUACION_EXTERNA_RESUELTA` y solo entonces permite continuar. El nivel externo no puede
    ser menor que el riesgo interno.
-9. Marca la revisión como `APROBADA`, prepara la ejecución controlada y registra el
-   resultado simulado. La operación financiera real no se confirma aun.
+9. Marca la revisión como `APROBADA`, persiste la intención de ejecución y la deja
+   en `EJECUTANDO`. El proceso espera el mensaje `EJECUCION_FINALIZADA`.
+10. El trabajador de ejecución reclama la intención, reserva y confirma contra el
+    proveedor simulado fuera de la transacción y envía el resultado. El proceso
+    marca `EJECUTADA` y termina.
 
 La espera externa se ubica después de la unión para que las tareas puedan abrirse y
 resolverse sin depender del proveedor. La integración real, los duplicados y los eventos
 tardíos son de etapas próximas.
+
+La espera de ejecución no llama al proveedor: el delegate solo persiste la intención y
+transiciona la revisión. El trabajador de aplicación hace la llamada externa y luego
+envía `EJECUCION_FINALIZADA`. Si el trabajador está deshabilitado, la revisión queda en
+`EJECUTANDO` con la intención `PENDIENTE`; al reiniciar, el trabajador la retoma.
 
 Cada tarea humana tiene dos temporizadores de frontera no interruptores:
 
@@ -93,13 +101,13 @@ gráfica y que los diagramas existan y no estén vacíos.
 
 La API inicia el proceso al crear la solicitud, persiste el identificador de instancia en la
 revisión y sincroniza cada tarea humana con `tarea_aprobacion`. El camino sin aprobaciones
-termina en `APROBADA`; los caminos con aprobaciones quedan en `PENDIENTE_APROBACION` y la
-bandeja `GET /api/v1/tareas-aprobacion` muestra las tareas visibles para cada aprobador o
-delegado. Los endpoints `POST /api/v1/tareas-aprobacion/{id}/aprobar` y `/rechazar` registran
-la decisión y avanzan el motor en la misma transacción. Un rechazo cancela las demás tareas
-de negocio de la revisión y usa el fin de terminación del proceso para cerrar las ramas
-restantes. El reenvío no modifica el BPMN: crea una revisión y una instancia nuevas y conserva
-la anterior con su historial. El temporizador de 24 horas crea una notificación persistida y
-consultable por el rol destinatario; el de 48 horas reasigna la tarea al superior configurado y
-permite resolverla por delegación. El paralelismo completo y la espera de riesgo externo están
-probados en el proceso real.
+queda en `EJECUTANDO` con la intención pendiente; los caminos con aprobaciones quedan en
+`PENDIENTE_APROBACION` y la bandeja `GET /api/v1/tareas-aprobacion` muestra las tareas visibles
+para cada aprobador o delegado. Los endpoints `POST /api/v1/tareas-aprobacion/{id}/aprobar` y
+`/rechazar` registran la decisión y avanzan el motor en la misma transacción. Un rechazo cancela
+las demás tareas de negocio de la revisión y usa el fin de terminación del proceso para cerrar
+las ramas restantes. El reenvío no modifica el BPMN: crea una revisión y una instancia nuevas y
+conserva la anterior con su historial. El temporizador de 24 horas crea una notificación
+persistida y consultable por el rol destinatario; el de 48 horas reasigna la tarea al superior
+configurado y permite resolverla por delegación. El paralelismo completo, la espera de riesgo
+externo y la ejecución idempotente simulada están probados en el proceso real.

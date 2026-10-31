@@ -65,10 +65,17 @@ $env:SPRING_PROFILES_ACTIVE="desarrollo"
 .\mvnw.cmd spring-boot:run
 ```
 
-La aplicación lee `.env` automáticamente. Como alternativa se puede definir `JWT_SECRETO` en la sesión:
+La aplicación lee `.env` automáticamente. Como alternativa se pueden definir los secretos en la sesión:
 
 ```powershell
 $env:JWT_SECRETO="<secreto de al menos 32 bytes>"
+$env:PROVEEDOR_FINANCIERO_SECRETO="<secreto de integración>"
+```
+
+El trabajador de ejecución se activa en `desarrollo`. Se puede desactivar para inspeccionar una intención pendiente:
+
+```powershell
+$env:EJECUCION_TRABAJADOR_HABILITADO="false"
 ```
 
 El sembrador de usuarios demo corre al final del arranque. Si el primer login devuelve `401`, esperar un instante y reintentar.
@@ -150,7 +157,7 @@ http://localhost:8080/swagger-ui.html
 
 ## API de solicitudes
 
-La creación requiere el rol `SOLICITANTE` e inicia el proceso BPMN. Si el plan no requiere aprobaciones, la revisión queda en `APROBADA`; si las requiere, queda en `PENDIENTE_APROBACION` y el motor abre las tareas humanas correspondientes.
+La creación requiere el rol `SOLICITANTE` e inicia el proceso BPMN. Si el plan no requiere aprobaciones, la revisión queda en `EJECUTANDO` y el proceso espera el resultado; si las requiere, queda en `PENDIENTE_APROBACION` y el motor abre las tareas humanas correspondientes. Cuando la última aprobación termina, la revisión pasa a `EJECUTANDO`.
 
 | Método | Ruta | Autorización |
 |---|---|---|
@@ -180,7 +187,7 @@ $creacion
 
 La respuesta `201` incluye `id`, `idRevision`, `revision`, `solicitante`, tipo, monto, moneda, descripción, justificación, `estado`, `nivelRiesgo`, `aprobacionesRequeridas`, `requiereEvaluacionExterna`, `fechaCreacion` y `fechaActualizacion`.
 
-Para 5 millones el plan está vacío y la revisión termina en `APROBADA`. Para 25 millones el riesgo es `BAJO`, el plan es `SUPERVISOR` y la revisión queda en `PENDIENTE_APROBACION`. Para 100 millones el riesgo es `MEDIO` y el plan es `GERENTE` y `SUPERVISOR`. Para 250 millones el riesgo es `ALTO`, el plan incluye `GERENTE`, `RIESGOS` y `SUPERVISOR`, y `requiereEvaluacionExterna` es `true`.
+Para 5 millones el plan está vacío y la revisión queda en `EJECUTANDO`; el trabajador la lleva a `EJECUTADA` en segundo plano. Para 25 millones el riesgo es `BAJO`, el plan es `SUPERVISOR` y la revisión queda en `PENDIENTE_APROBACION`. Para 100 millones el riesgo es `MEDIO` y el plan es `GERENTE` y `SUPERVISOR`. Para 250 millones el riesgo es `ALTO`, el plan incluye `GERENTE`, `RIESGOS` y `SUPERVISOR`, y `requiereEvaluacionExterna` es `true`.
 
 ### Consultar detalle
 
@@ -332,7 +339,24 @@ El proceso activa solo las ramas del plan:
 | Hasta 200 millones | Alto | `SUPERVISOR`, `GERENTE`, `RIESGOS` |
 | Más de 200 millones | Alto | `SUPERVISOR`, `GERENTE`, `RIESGOS` |
 
-Gerente y Riesgos son independientes y se pueden aprobar en cualquier orden. La revisión solo pasa a `APROBADA` cuando todas las ramas activadas aprobaron. Para más de 200 millones, después de las aprobaciones el proceso espera el mensaje `RIESGO_EVALUADO`; en `desarrollo` no hay una ruta HTTP para enviarlo, así que la solicitud queda en `PENDIENTE_APROBACION` hasta la integración de próximas etapas. El fixture se usa solo en pruebas automatizadas.
+Gerente y Riesgos son independientes y se pueden aprobar en cualquier orden. Cuando todas las ramas activadas aprobaron, la revisión pasa a `EJECUTANDO` y se persiste la intención de ejecución. Para más de 200 millones, después de las aprobaciones el proceso espera el mensaje `RIESGO_EVALUADO`; en `desarrollo` no hay una ruta HTTP para enviarlo, así que la solicitud queda en `PENDIENTE_APROBACION` hasta la integración de próximas etapas. El fixture se usa solo en pruebas automatizadas.
+
+## Ejecución financiera simulada
+
+El proceso no llama al proveedor. Primero persiste `intento_ejecucion` con una clave y una huella estables; después el trabajador reclama la intención, llama al proveedor fuera de una transacción y registra el resultado en otra transacción corta.
+
+El proveedor simulado reserva y confirma con claves distintas:
+
+```text
+reserva:{solicitudId}:{revisionId}
+confirmacion:{solicitudId}:{revisionId}
+```
+
+La confirmación es el punto irreversible. Una reserva confirmada no se puede liberar. El estado observable queda en `operacion_simulada`.
+
+Si el trabajador está deshabilitado, la revisión queda en `EJECUTANDO` con la intención `PENDIENTE`. Al reiniciar con `EJECUCION_TRABAJADOR_HABILITADO=true`, el trabajador retoma la intención y el proceso termina en `EJECUTADA`.
+
+Limitaciones de esta etapa: no se implementaron todavía la reconciliación de resultado desconocido, los incidentes, la cancelación ni la compensación. Un fallo del trabajador deja la intención en `ENVIANDO` para la sesión siguiente.
 
 ### Reenvío
 
