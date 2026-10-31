@@ -41,6 +41,7 @@ public class ProveedorFinancieroSimuladoDirecto
         new AtomicReference<>();
     private final AtomicInteger reservas = new AtomicInteger();
     private final AtomicInteger confirmaciones = new AtomicInteger();
+    private final AtomicInteger liberaciones = new AtomicInteger();
     private final AtomicInteger consultas = new AtomicInteger();
 
     @Override
@@ -82,6 +83,7 @@ public class ProveedorFinancieroSimuladoDirecto
     @Override
     public ResultadoOperacionFinanciera liberar(OperacionFinanciera operacion) {
         prepararFallo(operacion);
+        liberaciones.incrementAndGet();
         ResultadoOperacionFinanciera resultado = simulador.liberar(operacion);
         perderRespuestaSiCorresponde(operacion);
         return resultado;
@@ -103,6 +105,10 @@ public class ProveedorFinancieroSimuladoDirecto
         return confirmaciones.get();
     }
 
+    public int liberaciones() {
+        return liberaciones.get();
+    }
+
     public int consultas() {
         return consultas.get();
     }
@@ -113,6 +119,7 @@ public class ProveedorFinancieroSimuladoDirecto
         estadoIntento.set(null);
         reservas.set(0);
         confirmaciones.set(0);
+        liberaciones.set(0);
         consultas.set(0);
         fallos.limpiar();
     }

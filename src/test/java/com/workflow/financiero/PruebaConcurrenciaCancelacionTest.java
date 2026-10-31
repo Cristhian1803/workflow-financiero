@@ -190,8 +190,8 @@ class PruebaConcurrenciaCancelacionTest extends PruebaProcesoAprobacionBase {
     }
 
     @Test
-    @DisplayName("Una revisión en EJECUTANDO no se cancela con el control local")
-    void cancelarRevisionEnEjecucionNoEstaPermitido() throws Exception {
+    @DisplayName("Una revisión en EJECUTANDO sin reserva se cancela y libera la intención")
+    void cancelarRevisionEnEjecucionSinReservaQuedaCancelada() throws Exception {
         JsonNode creada = crear("demo", 25_000_000, "NORMAL");
         String solicitudId = creada.get("id").asText();
         String revisionId = creada.get("idRevision").asText();
@@ -203,16 +203,20 @@ class PruebaConcurrenciaCancelacionTest extends PruebaProcesoAprobacionBase {
         assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
         assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
 
-        assertThatThrownBy(() -> cancelar(
-            solicitudId, revisionId, "demo", "Se cancela antes de ejecutar"))
-            .isInstanceOf(TransicionEstadoInvalidaException.class);
+        ResultadoCancelacionSolicitud resultado = cancelar(
+            solicitudId, revisionId, "demo", "Se cancela antes de ejecutar");
 
-        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
-        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
+        assertThat(resultado.estadoRevision()).isEqualTo(EstadoRevision.CANCELADA);
+        assertThat(estadoRevision(revisionId)).isEqualTo("CANCELADA");
+        assertThat(estadoIntento(revisionId)).isEqualTo("CANCELADA");
         assertThat(contarDecisionesDeRevision(revisionId)).isEqualTo(1);
         assertThat(contarEventosTipoDeRevision(
-            revisionId, "CANCELACION_SOLICITADA")).isZero();
-        assertThat(adaptadorCancelacion.llamadas()).isEmpty();
+            revisionId, "CANCELACION_SOLICITADA")).isEqualTo(1);
+        assertThat(contarEventosTipoDeRevision(
+            revisionId, "COMPENSACION_CONFIRMADA")).isEqualTo(1);
+        assertThat(adaptadorCancelacion.llamadas()).hasSize(1);
+        assertThat(proveedorDirecto.reservas()).isZero();
+        assertThat(proveedorDirecto.liberaciones()).isZero();
     }
 
     @Test

@@ -588,6 +588,8 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
             .andExpect(jsonPath("$.paths['/api/v1/solicitudes/{id}/historial'].get")
                 .exists())
             .andExpect(jsonPath("$.paths['/api/v1/solicitudes/{id}/proceso'].get")
+                .exists())
+            .andExpect(jsonPath("$.paths['/api/v1/solicitudes/{id}/cancelar'].post")
                 .exists());
     }
 

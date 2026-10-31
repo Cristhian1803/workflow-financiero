@@ -191,6 +191,20 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
             .content(objectMapper.writeValueAsBytes(cuerpo)));
     }
 
+    ResultActions cancelar(
+        String solicitudId,
+        String usuario,
+        String motivo
+    ) throws Exception {
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("motivo", motivo);
+        return mockMvc.perform(conToken(
+                post(RUTA_SOLICITUDES + "/" + solicitudId + "/cancelar"),
+                token(usuario))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsBytes(cuerpo)));
+    }
+
     String token(String usuario) throws Exception {
         Map<String, String> cuerpo = Map.of(
             "usuario", usuario,
@@ -594,6 +608,22 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
                 + "WHERE inteejec_revisoli_id = ?",
             Long.class,
             UUID.fromString(revisionId));
+    }
+
+    String estadoOperacionSimulada(String clave) {
+        return jdbcTemplate.queryForObject(
+            "SELECT opersimu_estado FROM operacion_simulada "
+                + "WHERE opersimu_clave = ?",
+            String.class,
+            clave);
+    }
+
+    long contarOperacionesSimuladas(String accion) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM operacion_simulada "
+                + "WHERE opersimu_accion = ?",
+            Long.class,
+            accion);
     }
 
     String estadoIntento(String revisionId) {

@@ -279,6 +279,17 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
     }
 
     @Test
+    @DisplayName("Cancelar una solicitud exige autenticación")
+    void cancelarExigeAutenticacion() throws Exception {
+        mockMvc.perform(post(
+                "/api/v1/solicitudes/00000000-0000-0000-0000-000000000001/cancelar")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"motivo\":\"Prueba\"}"))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"));
+    }
+
+    @Test
     @DisplayName("Un usuario sin SOLICITANTE no puede crear solicitudes")
     void rechazaCreacionSinRolSolicitante() throws Exception {
         mockMvc.perform(post("/api/v1/solicitudes")

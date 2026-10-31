@@ -32,6 +32,7 @@ import org.flowable.bpmn.model.BoundaryEvent;
 import org.flowable.bpmn.model.BpmnModel;
 import org.flowable.bpmn.model.EndEvent;
 import org.flowable.bpmn.model.EventDefinition;
+import org.flowable.bpmn.model.EventSubProcess;
 import org.flowable.bpmn.model.ExclusiveGateway;
 import org.flowable.bpmn.model.FlowElement;
 import org.flowable.bpmn.model.FlowNode;
@@ -42,6 +43,7 @@ import org.flowable.bpmn.model.MessageEventDefinition;
 import org.flowable.bpmn.model.Process;
 import org.flowable.bpmn.model.SequenceFlow;
 import org.flowable.bpmn.model.ServiceTask;
+import org.flowable.bpmn.model.StartEvent;
 import org.flowable.bpmn.model.TerminateEventDefinition;
 import org.flowable.bpmn.model.TimerEventDefinition;
 import org.flowable.bpmn.model.UserTask;
@@ -378,6 +380,36 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
             .orElseThrow();
 
         assertThat(mensaje.getId()).isEqualTo("mensajeEjecucionFinalizada");
+    }
+
+    @Test
+    @DisplayName("La cancelación usa un subproceso de eventos interrumpible")
+    void cancelacionUsaSubprocesoDeEventos() {
+        BpmnModel modelo = modelo();
+        EventSubProcess subproceso = (EventSubProcess) modelo.getMainProcess()
+            .getFlowElement("subprocesoCancelacion");
+
+        assertThat(subproceso).isNotNull();
+        StartEvent inicio = (StartEvent) subproceso
+            .getFlowElement("inicioCancelacion");
+        assertThat(inicio.isInterrupting()).isTrue();
+
+        MessageEventDefinition definicion = inicio.getEventDefinitions()
+            .stream()
+            .filter(MessageEventDefinition.class::isInstance)
+            .map(MessageEventDefinition.class::cast)
+            .findFirst()
+            .orElseThrow();
+        assertThat(definicion.getMessageRef())
+            .isEqualTo("CANCELACION_SOLICITADA");
+        assertThat(subproceso.getFlowElement("finCancelacion")).isNotNull();
+
+        Message mensaje = modelo.getMessages().stream()
+            .filter(candidato -> "CANCELACION_SOLICITADA".equals(
+                candidato.getName()))
+            .findFirst()
+            .orElseThrow();
+        assertThat(mensaje.getId()).isEqualTo("mensajeCancelacionSolicitada");
     }
 
     @Test

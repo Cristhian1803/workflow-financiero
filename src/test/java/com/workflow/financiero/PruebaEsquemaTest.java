@@ -115,6 +115,7 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new Restriccion("fk_decision_actor", "f"),
             new Restriccion("fk_evaluacion_revision", "f"),
             new Restriccion("fk_intento_revision", "f"),
+            new Restriccion("fk_intento_cancelacion_actor", "f"),
             new Restriccion("fk_evento_externo_solicitud", "f"),
             new Restriccion("fk_evento_externo_revision", "f"),
             new Restriccion("fk_evento_externo_revision_solicitud", "f"),
@@ -302,6 +303,10 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"intento_ejecucion", "inteejec_proximo_intento_en"},
             new String[] {"intento_ejecucion", "inteejec_reserva_referencia"},
             new String[] {"intento_ejecucion", "inteejec_confirmacion_referencia"},
+            new String[] {"intento_ejecucion", "inteejec_cancelacion_motivo"},
+            new String[] {"intento_ejecucion", "inteejec_cancelacion_actor_usua_id"},
+            new String[] {"intento_ejecucion", "inteejec_cancelacion_solicitada_en"},
+            new String[] {"intento_ejecucion", "inteejec_liberacion_referencia"},
             new String[] {"evento_externo", "evenexte_solifina_id"},
             new String[] {"evento_externo", "evenexte_revisoli_id"},
             new String[] {"notificacion", "noti_tareapro_id"},
@@ -424,7 +429,8 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
                 "RESULTADO_DESCONOCIDO",
                 "FALLIDA",
                 "COMPENSANDO",
-                "COMPENSADA"
+                "COMPENSADA",
+                "CANCELADA"
             );
         assertThat(definicionRestriccion("ck_incidente_tipo"))
             .contains("EJECUCION", "COMPENSACION", "RIESGO_EXTERNO");
