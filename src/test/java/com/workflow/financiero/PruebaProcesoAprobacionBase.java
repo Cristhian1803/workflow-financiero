@@ -225,6 +225,86 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
         );
     }
 
+    void otorgarRol(String usuario, String rol) {
+        jdbcTemplate.update(
+            "INSERT INTO usuario_rol (usurol_usua_id, usurol_rol_codigo) "
+                + "SELECT usua_id, ? FROM usuario WHERE usua_usuario = ? "
+                + "ON CONFLICT DO NOTHING",
+            rol,
+            usuario
+        );
+    }
+
+    void quitarRol(String usuario, String rol) {
+        jdbcTemplate.update(
+            "DELETE FROM usuario_rol WHERE usurol_usua_id = "
+                + "(SELECT usua_id FROM usuario WHERE usua_usuario = ?) "
+                + "AND usurol_rol_codigo = ?",
+            usuario,
+            rol
+        );
+    }
+
+    void desactivarUsuario(String usuario) {
+        jdbcTemplate.update(
+            "UPDATE usuario SET usua_activo = FALSE WHERE usua_usuario = ?",
+            usuario
+        );
+    }
+
+    void activarUsuario(String usuario) {
+        jdbcTemplate.update(
+            "UPDATE usuario SET usua_activo = TRUE WHERE usua_usuario = ?",
+            usuario
+        );
+    }
+
+    String identificadorTareaMotor(String revisionId, String rol) {
+        return jdbcTemplate.queryForObject(
+            "SELECT tareapro_identificador_tarea_motor FROM tarea_aprobacion "
+                + "WHERE tareapro_revisoli_id = ? AND tareapro_rol_codigo = ?",
+            String.class,
+            UUID.fromString(revisionId),
+            rol
+        );
+    }
+
+    String asignadoTarea(String tareaId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT u.usua_usuario FROM tarea_aprobacion t "
+                + "LEFT JOIN usuario u ON u.usua_id = t.tareapro_asignado_usua_id "
+                + "WHERE t.tareapro_id = ?",
+            String.class,
+            UUID.fromString(tareaId)
+        );
+    }
+
+    String asignadoMotor(String procesoId, String definicion) {
+        Task tarea = tareaMotor(procesoId, definicion);
+        return tarea == null ? null : tarea.getAssignee();
+    }
+
+    Map<String, Object> decisionDeTarea(String tareaId) {
+        return jdbcTemplate.queryForMap(
+            "SELECT deciapro_decision, deciapro_motivo, deciapro_delegado, "
+                + "deciapro_actor_usua_id "
+                + "FROM decision_aprobacion WHERE deciapro_tareapro_id = ?",
+            UUID.fromString(tareaId)
+        );
+    }
+
+    String rolRegistrado(String solicitudId, String usuario) {
+        return jdbcTemplate.queryForObject(
+            "SELECT regiactorol_rol_codigo FROM registro_actor_rol "
+                + "WHERE regiactorol_solifina_id = ? "
+                + "AND regiactorol_usua_id = "
+                + "(SELECT usua_id FROM usuario WHERE usua_usuario = ?)",
+            String.class,
+            UUID.fromString(solicitudId),
+            usuario
+        );
+    }
+
     String idTareaAprobacionDeRevision(String revisionId, String rol) {
         return jdbcTemplate.queryForObject(
             "SELECT tareapro_id::text FROM tarea_aprobacion "

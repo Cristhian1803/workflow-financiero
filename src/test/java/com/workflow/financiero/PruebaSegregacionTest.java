@@ -106,6 +106,8 @@ class PruebaSegregacionTest extends PruebaIntegracionBase {
     @AfterEach
     void limpiar() {
         quitarRol("supervisor", "GERENTE");
+        quitarRol("jefe_riesgos", "SUPERVISOR");
+        quitarRol("demo", "GERENTE");
         limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
         activarUsuariosDemo();
@@ -301,6 +303,99 @@ class PruebaSegregacionTest extends PruebaIntegracionBase {
         assertThat(rolRegistrado(solicitudId, "supervisor"))
             .isEqualTo("GERENTE");
         assertThat(contarRegistros(solicitudId, "supervisor")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Un delegado Jefe de Riesgos no aprueba otro rol funcional")
+    void delegadoJefeRiesgosNoApruebaOtroRol() throws Exception {
+        otorgarRol("jefe_riesgos", "SUPERVISOR");
+        try {
+            JsonNode creada = crear("demo", 250_000_000, "NORMAL");
+            String solicitudId = creada.get("id").asText();
+            String tareaRiesgos = idTarea(solicitudId, "RIESGOS");
+            String tareaSupervisor = idTarea(solicitudId, "SUPERVISOR");
+
+            JsonNode primera = leer(aprobar(
+                tareaRiesgos, "jefe_riesgos", null)
+                .andExpect(status().isOk())
+                .andReturn());
+
+            assertThat(primera.get("delegado").asBoolean()).isTrue();
+            assertThat(rolRegistrado(solicitudId, "jefe_riesgos"))
+                .isEqualTo("RIESGOS");
+
+            aprobar(tareaSupervisor, "jefe_riesgos", null)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo")
+                    .value("SEGREGACION_FUNCIONES"));
+
+            assertThat(estadoTarea(tareaSupervisor)).isEqualTo("PENDIENTE");
+        } finally {
+            quitarRol("jefe_riesgos", "SUPERVISOR");
+        }
+    }
+
+    @Test
+    @DisplayName("Un delegado que es el creador no puede aprobar")
+    void delegadoCreadorNoPuedeAprobar() throws Exception {
+        otorgarRol("demo", "GERENTE");
+        try {
+            JsonNode creada = crear("demo", 25_000_000, "NORMAL");
+            String solicitudId = creada.get("id").asText();
+            String tareaId = idTarea(solicitudId, "SUPERVISOR");
+
+            aprobar(tareaId, "demo", null)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.codigo")
+                    .value("APROBACION_NO_PERMITIDA"));
+
+            assertThat(estadoTarea(tareaId)).isEqualTo("PENDIENTE");
+            assertThat(contarRegistros(solicitudId, "demo")).isZero();
+        } finally {
+            quitarRol("demo", "GERENTE");
+        }
+    }
+
+    @Test
+    @DisplayName("Un delegado no aprueba otro rol en una revisión posterior")
+    void delegadoYaAproboOtroRolEnRevisionAnterior() throws Exception {
+        JsonNode creada = crear("demo", 100_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+
+        aprobar(idTarea(solicitudId, "SUPERVISOR"), "gerente", null)
+            .andExpect(status().isOk());
+        assertThat(rolRegistrado(solicitudId, "gerente"))
+            .isEqualTo("SUPERVISOR");
+
+        String revision2 = crearRevisionAdicional(solicitudId, 100_000_000);
+        String tareaGerente = idTareaDeRevision(revision2, "GERENTE");
+
+        aprobar(tareaGerente, "gerente", null)
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("SEGREGACION_FUNCIONES"));
+
+        assertThat(estadoTarea(tareaGerente)).isEqualTo("PENDIENTE");
+        assertThat(contarRegistros(solicitudId, "gerente")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Un delegado repite el mismo rol en otra revisión")
+    void delegadoRepiteMismoRolEnOtraRevision() throws Exception {
+        JsonNode creada = crear("demo", 25_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+
+        aprobar(idTarea(solicitudId, "SUPERVISOR"), "gerente", null)
+            .andExpect(status().isOk());
+        assertThat(rolRegistrado(solicitudId, "gerente"))
+            .isEqualTo("SUPERVISOR");
+
+        String revision2 = crearRevisionAdicional(solicitudId, 25_000_000);
+
+        aprobar(idTareaDeRevision(revision2, "SUPERVISOR"), "gerente", null)
+            .andExpect(status().isOk());
+
+        assertThat(estadoRevision(revision2)).isEqualTo("APROBADA");
+        assertThat(contarRegistros(solicitudId, "gerente")).isEqualTo(1);
     }
 
     private JsonNode crear(String usuario, long monto, String tipoOperacion)
