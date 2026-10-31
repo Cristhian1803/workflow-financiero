@@ -229,7 +229,11 @@ public class ServicioIntencionEjecucion {
             return;
         }
         if (revision.getEstado() == EstadoRevision.RECHAZADA
-            || revision.getEstado() == EstadoRevision.CANCELADA) {
+            || revision.getEstado() == EstadoRevision.CANCELADA
+            || revision.getEstado() == EstadoRevision.COMPENSANDO
+            || intento.getEstado() == EstadoIntentoEjecucion.COMPENSANDO
+            || intento.getEstado() == EstadoIntentoEjecucion.COMPENSADA
+            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA) {
             throw new EjecucionNoPermitidaException(
                 "La revisión ya está en estado " + revision.getEstado());
         }
@@ -301,7 +305,11 @@ public class ServicioIntencionEjecucion {
         validarCorrespondencia(solicitud, revision, trabajo);
 
         if (intento.getEstado() == EstadoIntentoEjecucion.CONFIRMADA
-            || revision.getEstado().esTerminal()) {
+            || revision.getEstado().esTerminal()
+            || revision.getEstado() == EstadoRevision.COMPENSANDO
+            || intento.getEstado() == EstadoIntentoEjecucion.COMPENSANDO
+            || intento.getEstado() == EstadoIntentoEjecucion.COMPENSADA
+            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA) {
             return null;
         }
 
@@ -334,7 +342,11 @@ public class ServicioIntencionEjecucion {
         validarCorrespondencia(solicitud, revision, trabajo);
 
         if (intento.getEstado() == EstadoIntentoEjecucion.CONFIRMADA
-            || revision.getEstado().esTerminal()) {
+            || revision.getEstado().esTerminal()
+            || revision.getEstado() == EstadoRevision.COMPENSANDO
+            || intento.getEstado() == EstadoIntentoEjecucion.COMPENSANDO
+            || intento.getEstado() == EstadoIntentoEjecucion.COMPENSADA
+            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA) {
             return null;
         }
 
@@ -428,11 +440,15 @@ public class ServicioIntencionEjecucion {
     public void programarReintento(TrabajoEjecucion trabajo, String motivo) {
         SolicitudFinanciera solicitud = bloquearSolicitud(trabajo.solicitudId());
         RevisionSolicitud revision = bloquearRevision(trabajo.revisionId());
-        if (revision.getEstado().esTerminal()) {
+        if (revision.getEstado().esTerminal()
+            || revision.getEstado() == EstadoRevision.COMPENSANDO) {
             return;
         }
         IntentoEjecucion intento = bloquearIntento(trabajo.intentoId());
-        if (intento.getEstado() == EstadoIntentoEjecucion.CONFIRMADA) {
+        if (intento.getEstado() == EstadoIntentoEjecucion.CONFIRMADA
+            || intento.getEstado() == EstadoIntentoEjecucion.COMPENSANDO
+            || intento.getEstado() == EstadoIntentoEjecucion.COMPENSADA
+            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA) {
             return;
         }
         intento.programarReintento(
@@ -447,7 +463,18 @@ public class ServicioIntencionEjecucion {
         TrabajoEjecucion trabajo,
         String motivo
     ) {
+        SolicitudFinanciera solicitud = bloquearSolicitud(trabajo.solicitudId());
+        RevisionSolicitud revision = bloquearRevision(trabajo.revisionId());
+        if (revision.getEstado().esTerminal()
+            || revision.getEstado() == EstadoRevision.COMPENSANDO) {
+            return;
+        }
         IntentoEjecucion intento = bloquearIntento(trabajo.intentoId());
+        if (intento.getEstado() == EstadoIntentoEjecucion.COMPENSANDO
+            || intento.getEstado() == EstadoIntentoEjecucion.COMPENSADA
+            || intento.getEstado() == EstadoIntentoEjecucion.CANCELADA) {
+            return;
+        }
         intento.detenerReintentoAutomatico(motivo);
         intentoRepositorio.flush();
     }
