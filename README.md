@@ -155,6 +155,7 @@ La creación requiere el rol `SOLICITANTE` e inicia el proceso BPMN. Si el plan 
 | Método | Ruta | Autorización |
 |---|---|---|
 | `POST` | `/api/v1/solicitudes` | `SOLICITANTE` |
+| `POST` | `/api/v1/solicitudes/{id}/reenvios` | Dueño |
 | `GET` | `/api/v1/solicitudes/{id}` | Dueño, aprobador relacionado o administrador |
 | `GET` | `/api/v1/solicitudes` | Dueño o administrador |
 | `GET` | `/api/v1/solicitudes/{id}/historial` | Dueño, auditor o administrador |
@@ -310,6 +311,21 @@ El proceso activa solo las ramas del plan:
 
 Gerente y Riesgos son independientes y se pueden aprobar en cualquier orden. La revisión solo pasa a `APROBADA` cuando todas las ramas activadas aprobaron. Para más de 200 millones, después de las aprobaciones el proceso espera el mensaje `RIESGO_EVALUADO`; en `desarrollo` no hay una ruta HTTP para enviarlo, así que la solicitud queda en `PENDIENTE_APROBACION` hasta la integración de próximas etapas. El fixture se usa solo en pruebas automatizadas.
 
+### Reenvío
+
+Solo el dueño puede reenviar una solicitud cuya revisión actual esté `RECHAZADA`, dentro de los 30 días posteriores al rechazo y con un máximo de tres revisiones en total. El reenvío crea una revisión y un proceso nuevos, recalcula riesgo y plan y conserva el historial, las decisiones y las tareas de la revisión anterior.
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://localhost:8080/api/v1/solicitudes/$($creacion.id)/reenvios" `
+  -Headers @{ Authorization = "Bearer $($respuesta.token)" } `
+  -ContentType "application/json" `
+  -Body '{"tipoOperacion":"NORMAL","monto":75000000,"moneda":"PYG","descripcion":"Pago corregido","justificacion":"Se ajusta el monto a la documentacion"}'
+```
+
+La respuesta `201` tiene el mismo contrato que la creación, con `revision` incrementada y el `Location` de la solicitud. Errores: `400 SOLICITUD_INVALIDA`, `403 ACCESO_DENEGADO`, `404 RECURSO_NO_ENCONTRADO`, `409 CONFLICTO_DATOS` y `422 REENVIO_NO_PERMITIDO`.
+
 ## API de demostración
 
 Requiere `Authorization: Bearer <token>`:
@@ -327,8 +343,8 @@ No es la API final de solicitudes.
 - Un token sigue válido hasta su vencimiento; el usuario se revalida como activo en cada consulta, pero los roles del token no cambian hasta que vence.
 - Los roles del token no cambian hasta que vence; `/autenticacion/yo` muestra los roles actuales de la base.
 - El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
-- La API no cancela solicitudes, no reenvía y no ejecuta operaciones financieras reales.
-- Las rutas combinadas y el paralelismo están implementados. La integración real de riesgo externo, la cancelación y la compensación quedan para futuras etapas.
+- La API no cancela solicitudes ni ejecuta operaciones financieras reales. El reenvío está disponible solo para el dueño y con las reglas de la sección de reenvío.
+- Las rutas combinadas, el paralelismo, el rechazo y el reenvío están implementados. La integración real de riesgo externo, la cancelación y la compensación quedan para futuras etapas.
 - Los temporizadores de 24/48 horas están modelados, pero la notificación y la reasignación reales todavía no se implementan.
 - El creador no puede aprobar sus propias tareas.
 - El detalle recalcula el plan de aprobación con las políticas vigentes, porque el plan no se persiste.

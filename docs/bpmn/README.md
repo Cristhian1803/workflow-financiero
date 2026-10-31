@@ -92,5 +92,6 @@ bandeja `GET /api/v1/tareas-aprobacion` muestra las tareas visibles para cada ap
 delegado. Los endpoints `POST /api/v1/tareas-aprobacion/{id}/aprobar` y `/rechazar` registran
 la decisión y avanzan el motor en la misma transacción. Un rechazo cancela las demás tareas
 de negocio de la revisión y usa el fin de terminación del proceso para cerrar las ramas
-restantes. El paralelismo completo y la espera de riesgo externo se prueban en la etapa
-siguiente.
+restantes. El reenvío no modifica el BPMN: crea una revisión y una instancia nuevas y conserva
+la anterior con su historial. El paralelismo completo y la espera de riesgo externo están
+probados en el proceso real.
