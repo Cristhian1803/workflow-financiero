@@ -92,20 +92,6 @@ public class ServicioNotificacionEscalamiento {
 
     private String contenido(TareaAprobacion tarea, Duration duracion) {
         return "La tarea de aprobación de " + tarea.getRol().getCodigo()
-            + " lleva " + describirDuracion(duracion) + " pendiente";
-    }
-
-    private String describirDuracion(Duration duracion) {
-        if (duracion.toHours() > 0 && duracion.toMinutesPart() == 0) {
-            long horas = duracion.toHours();
-            return horas + (horas == 1 ? " hora" : " horas");
-        }
-        if (duracion.toMinutes() > 0 && duracion.toSecondsPart() == 0) {
-            long minutos = duracion.toMinutes();
-            return minutos + (minutos == 1 ? " minuto" : " minutos");
-        }
-
-        long segundos = duracion.toSeconds();
-        return segundos + (segundos == 1 ? " segundo" : " segundos");
+            + " lleva " + TextoDuracion.describir(duracion) + " pendiente";
     }
 }
