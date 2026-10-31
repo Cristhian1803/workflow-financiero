@@ -23,6 +23,7 @@ public enum CodigoError {
     APROBACION_NO_PERMITIDA(HttpStatus.FORBIDDEN, "Aprobación no permitida"),
     SEGREGACION_FUNCIONES(HttpStatus.FORBIDDEN, "Segregación de funciones"),
     CONFLICTO_DATOS(HttpStatus.CONFLICT, "Conflicto de datos"),
+    REENVIO_NO_PERMITIDO(HttpStatus.UNPROCESSABLE_ENTITY, "Reenvío no permitido"),
     ERROR_INTERNO(HttpStatus.INTERNAL_SERVER_ERROR, "Error interno");
 
     private final HttpStatus estado;

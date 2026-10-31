@@ -14,6 +14,7 @@ import com.workflow.financiero.aplicacion.servicio.EstadoProceso;
 import com.workflow.financiero.aplicacion.servicio.EventoHistorial;
 import com.workflow.financiero.aplicacion.servicio.PaginaSolicitudes;
 import com.workflow.financiero.aplicacion.servicio.ServicioConsultaSolicitud;
+import com.workflow.financiero.aplicacion.servicio.ServicioReenvioSolicitud;
 import com.workflow.financiero.aplicacion.servicio.ServicioRegistroSolicitud;
 import com.workflow.financiero.aplicacion.servicio.ServicioUsuarioActual;
 import com.workflow.financiero.aplicacion.servicio.SolicitudDetalle;
@@ -58,6 +59,7 @@ public class ControladorSolicitudFinanciera {
 
     private final ServicioUsuarioActual servicioUsuarioActual;
     private final ServicioRegistroSolicitud servicioRegistro;
+    private final ServicioReenvioSolicitud servicioReenvio;
     private final ServicioConsultaSolicitud servicioConsulta;
 
     @PostMapping
@@ -90,6 +92,60 @@ public class ControladorSolicitudFinanciera {
         String correlacion = Correlacion.obtener(peticionHttp);
 
         SolicitudDetalle detalle = servicioRegistro.registrar(
+            actual,
+            new CrearSolicitudComando(
+                peticion.tipoOperacion(),
+                peticion.monto(),
+                peticion.moneda(),
+                peticion.descripcion(),
+                peticion.justificacion()
+            ),
+            correlacion
+        );
+
+        return ResponseEntity
+            .created(URI.create("/api/v1/solicitudes/" + detalle.id()))
+            .body(respuesta(detalle));
+    }
+
+    @PostMapping("/{id}/reenvios")
+    @Operation(
+        summary = "Reenviar una solicitud rechazada",
+        description = "Solo el dueño puede reenviar desde la revisión actual "
+            + "RECHAZADA, dentro de 30 días y con un máximo de tres revisiones. "
+            + "Crea una revisión y un proceso nuevos, recalcula riesgo y plan y "
+            + "conserva el historial anterior."
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "Solicitud reenviada"),
+        @ApiResponse(responseCode = "400", description = "Datos inválidos",
+            content = @Content(schema = @Schema(implementation = ErrorApiRespuesta.class))),
+        @ApiResponse(responseCode = "401", description = "No autenticado",
+            content = @Content(schema = @Schema(implementation = ErrorApiRespuesta.class))),
+        @ApiResponse(responseCode = "403", description = "El actor no es el dueño",
+            content = @Content(schema = @Schema(implementation = ErrorApiRespuesta.class))),
+        @ApiResponse(responseCode = "404", description = "No encontrada o no visible",
+            content = @Content(schema = @Schema(implementation = ErrorApiRespuesta.class))),
+        @ApiResponse(responseCode = "409", description = "La revisión no está rechazada",
+            content = @Content(schema = @Schema(implementation = ErrorApiRespuesta.class))),
+        @ApiResponse(responseCode = "422", description = "Reenvío no permitido",
+            content = @Content(schema = @Schema(implementation = ErrorApiRespuesta.class))),
+        @ApiResponse(responseCode = "500", description = "Error inesperado",
+            content = @Content(schema = @Schema(implementation = ErrorApiRespuesta.class)))
+    })
+    ResponseEntity<SolicitudRespuesta> reenviar(
+        @Parameter(description = "Identificador de la solicitud")
+        @PathVariable UUID id,
+        @Valid @RequestBody CrearSolicitudPeticion peticion,
+        Principal principal,
+        HttpServletRequest peticionHttp
+    ) {
+        UsuarioActual actual = servicioUsuarioActual.obtenerActual(
+            principal.getName());
+        String correlacion = Correlacion.obtener(peticionHttp);
+
+        SolicitudDetalle detalle = servicioReenvio.reenviar(
+            id,
             actual,
             new CrearSolicitudComando(
                 peticion.tipoOperacion(),

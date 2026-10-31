@@ -4,6 +4,7 @@ import com.workflow.financiero.aplicacion.excepcion.CredencialesInvalidasExcepti
 import com.workflow.financiero.dominio.excepcion.AccesoDenegadoException;
 import com.workflow.financiero.dominio.excepcion.AprobacionNoPermitidaException;
 import com.workflow.financiero.dominio.excepcion.DecisionInvalidaException;
+import com.workflow.financiero.dominio.excepcion.ReenvioNoPermitidoException;
 import com.workflow.financiero.dominio.excepcion.RolAprobadorInvalidoException;
 import com.workflow.financiero.dominio.excepcion.SegregacionFuncionesException;
 import com.workflow.financiero.dominio.excepcion.SolicitudInvalidaException;
@@ -209,6 +210,18 @@ public class ManejadorErroresApi {
         return respuesta(
             CodigoError.SEGREGACION_FUNCIONES,
             "El actor ya aprobó otro rol funcional en esta solicitud",
+            peticion
+        );
+    }
+
+    @ExceptionHandler(ReenvioNoPermitidoException.class)
+    ResponseEntity<ProblemDetail> reenvioNoPermitido(
+        ReenvioNoPermitidoException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.REENVIO_NO_PERMITIDO,
+            excepcion.getMessage(),
             peticion
         );
     }
