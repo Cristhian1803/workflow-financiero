@@ -7,8 +7,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workflow.financiero.aplicacion.puerto.PuertoProceso;
+import com.workflow.financiero.aplicacion.servicio.ServicioIncidente;
 import com.workflow.financiero.aplicacion.servicio.ServicioIntencionEjecucion;
+import com.workflow.financiero.aplicacion.simulador.ConfiguracionFallosSimulador;
 import com.workflow.financiero.infraestructura.ejecucion.TrabajadorEjecucion;
+import com.workflow.financiero.infraestructura.ejecucion.TrabajadorRecuperacionEjecucion;
 import com.workflow.financiero.infraestructura.seguridad.SembradorUsuariosDemo;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,7 +42,10 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  */
 @SpringBootTest(properties = {
     "flowable.async-executor-activate=false",
-    "spring.profiles.active=pruebas"
+    "spring.profiles.active=pruebas",
+    "ejecucion.trabajador.max-intentos=3",
+    "ejecucion.trabajador.reclamacion-vencida=PT0S",
+    "ejecucion.trabajador.reintento-espera=PT0S"
 })
 @AutoConfigureMockMvc
 abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
@@ -47,6 +53,7 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
     static final String RUTA_SOLICITUDES = "/api/v1/solicitudes";
     static final String RUTA_TAREAS = "/api/v1/tareas-aprobacion";
     static final String RUTA_NOTIFICACIONES = "/api/v1/notificaciones";
+    static final String RUTA_INCIDENTES = "/api/v1/incidentes";
     static final String RUTA_LOGIN =
         "/api/v1/autenticacion/iniciar-sesion";
     static final String CLAVE_PROCESO = "aprobacionFinanciera";
@@ -83,7 +90,16 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
     TrabajadorEjecucion trabajadorEjecucion;
 
     @Autowired
+    TrabajadorRecuperacionEjecucion trabajadorRecuperacion;
+
+    @Autowired
     ServicioIntencionEjecucion servicioIntencion;
+
+    @Autowired
+    ServicioIncidente servicioIncidente;
+
+    @Autowired
+    ConfiguracionFallosSimulador fallos;
 
     @Autowired
     ProveedorFinancieroSimuladoDirecto proveedorDirecto;
@@ -505,6 +521,71 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
 
     int ejecutarTrabajador() {
         return trabajadorEjecucion.ejecutarPendientes();
+    }
+
+    int ejecutarRecuperacion() {
+        return trabajadorRecuperacion.reconciliarPendientes();
+    }
+
+    long contarIncidentes() {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM incidente", Long.class);
+    }
+
+    String idIncidente(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT inci_id::text FROM incidente "
+                + "WHERE inci_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    String estadoIncidente(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT inci_estado FROM incidente WHERE inci_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    boolean incidenteReintentable(String revisionId) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+            "SELECT inci_reintentable FROM incidente "
+                + "WHERE inci_revisoli_id = ?",
+            Boolean.class,
+            UUID.fromString(revisionId)));
+    }
+
+    String motivoIncidente(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT inci_motivo FROM incidente WHERE inci_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    String ultimoResultadoIncidente(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT inci_ultimo_resultado FROM incidente "
+                + "WHERE inci_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    int reintentosIncidente(String revisionId) {
+        Integer valor = jdbcTemplate.queryForObject(
+            "SELECT inci_reintentos FROM incidente "
+                + "WHERE inci_revisoli_id = ?",
+            Integer.class,
+            UUID.fromString(revisionId));
+        return valor == null ? 0 : valor;
+    }
+
+    String actorIncidente(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT u.usua_usuario FROM incidente i "
+                + "LEFT JOIN usuario u ON u.usua_id = i.inci_actor_usua_id "
+                + "WHERE i.inci_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
     }
 
     long contarIntentos(String revisionId) {

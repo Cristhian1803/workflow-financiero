@@ -170,7 +170,11 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(proceso.getFlowElement("prepararEjecucion")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("esperarResultadoEjecucion"))
             .isInstanceOf(IntermediateCatchEvent.class);
+        assertThat(proceso.getFlowElement("decidirResultadoEjecucion"))
+            .isInstanceOf(ExclusiveGateway.class);
         assertThat(proceso.getFlowElement("marcarEjecutada")).isInstanceOf(ServiceTask.class);
+        assertThat(proceso.getFlowElement("marcarResultadoDesconocido"))
+            .isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("registrarRechazo")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("decidirAprobaciones")).isNotNull();
         assertThat(proceso.getFlowElement("decidirRiesgoExterno")).isNotNull();
@@ -265,6 +269,12 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
             .contains("requiereRiesgos");
         assertThat(condicion(proceso, "flujoRequiereRiesgoExterno"))
             .contains("requiereEvaluacionExterna");
+        assertThat(condicion(proceso, "flujoEjecucionConfirmada"))
+            .contains("resultadoEjecucion")
+            .contains("CONFIRMADA");
+        assertThat(((ExclusiveGateway) proceso.getFlowElement(
+            "decidirResultadoEjecucion")).getDefaultFlow())
+            .isEqualTo("flujoResultadoDesconocido");
 
         Map<String, String> variablesDecision = Map.of(
             "Supervisor", "decisionSupervisor",
@@ -291,6 +301,7 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
             Map.entry("marcarAprobada", "delegadoMarcarAprobada"),
             Map.entry("prepararEjecucion", "delegadoPrepararEjecucion"),
             Map.entry("marcarEjecutada", "delegadoMarcarEjecutada"),
+            Map.entry("marcarResultadoDesconocido", "delegadoMarcarResultadoDesconocido"),
             Map.entry("registrarRechazo", "delegadoRegistrarRechazo"),
             Map.entry("notificarSupervisor", "delegadoNotificarEscalamiento"),
             Map.entry("notificarGerente", "delegadoNotificarEscalamiento"),

@@ -44,6 +44,7 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         tablas.put("notificacion", "noti");
         tablas.put("registro_idempotencia", "regiidem");
         tablas.put("operacion_simulada", "opersimu");
+        tablas.put("incidente", "inci");
 
         tablas.forEach((tabla, prefijo) -> {
             List<String> columnas = columnas(tabla);
@@ -133,7 +134,15 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new Restriccion("ck_operacion_simulada_accion", "c"),
             new Restriccion("ck_operacion_simulada_estado", "c"),
             new Restriccion("ck_operacion_simulada_monto", "c"),
-            new Restriccion("ck_intento_ejecucion_estado", "c")
+            new Restriccion("ck_intento_ejecucion_estado", "c"),
+            new Restriccion("pk_incidente", "p"),
+            new Restriccion("uq_incidente_causa", "u"),
+            new Restriccion("fk_incidente_solicitud", "f"),
+            new Restriccion("fk_incidente_revision", "f"),
+            new Restriccion("fk_incidente_revision_solicitud", "f"),
+            new Restriccion("fk_incidente_actor", "f"),
+            new Restriccion("ck_incidente_tipo", "c"),
+            new Restriccion("ck_incidente_estado", "c")
         );
 
         restricciones.forEach(restriccion -> {
@@ -210,7 +219,9 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"registro_idempotencia", "regiidem_expira_en"},
             new String[] {"registro_idempotencia", "regiidem_creado_en"},
             new String[] {"operacion_simulada", "opersimu_creado_en"},
-            new String[] {"operacion_simulada", "opersimu_actualizado_en"}
+            new String[] {"operacion_simulada", "opersimu_actualizado_en"},
+            new String[] {"incidente", "inci_creado_en"},
+            new String[] {"incidente", "inci_actualizado_en"}
         );
 
         instantes.forEach(par -> assertThat(tipoColumna(par[0], par[1]))
@@ -299,7 +310,10 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"notificacion", "noti_leida_en"},
             new String[] {"registro_idempotencia", "regiidem_codigo_respuesta"},
             new String[] {"registro_idempotencia", "regiidem_cuerpo_respuesta"},
-            new String[] {"operacion_simulada", "opersimu_actualizado_en"}
+            new String[] {"operacion_simulada", "opersimu_actualizado_en"},
+            new String[] {"incidente", "inci_actor_usua_id"},
+            new String[] {"incidente", "inci_actualizado_en"},
+            new String[] {"incidente", "inci_ultimo_resultado"}
         );
 
         opcionales.forEach(par -> assertThat(esNullable(par[0], par[1]))
@@ -318,6 +332,13 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         assertThat(esNullable("registro_idempotencia", "regiidem_clave")).isFalse();
         assertThat(esNullable("operacion_simulada", "opersimu_clave")).isFalse();
         assertThat(esNullable("operacion_simulada", "opersimu_monto")).isFalse();
+        assertThat(esNullable("incidente", "inci_tipo")).isFalse();
+        assertThat(esNullable("incidente", "inci_estado")).isFalse();
+        assertThat(esNullable("incidente", "inci_motivo")).isFalse();
+        assertThat(esNullable("incidente", "inci_reintentable")).isFalse();
+        assertThat(esNullable("incidente", "inci_reintentos")).isFalse();
+        assertThat(tipoColumna("incidente", "inci_reintentos"))
+            .isEqualTo("integer");
     }
 
     @Test
@@ -338,7 +359,11 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             "idx_idempotencia_expira",
             "uq_revision_proceso",
             "idx_operacion_simulada_intencion",
-            "idx_intento_reclamacion"
+            "idx_intento_reclamacion",
+            "idx_incidente_estado",
+            "idx_incidente_revision",
+            "idx_incidente_referencia",
+            "idx_intento_recuperacion"
         );
 
         indices.forEach(indice -> assertThat(contarIndice(indice))
@@ -401,6 +426,10 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
                 "COMPENSANDO",
                 "COMPENSADA"
             );
+        assertThat(definicionRestriccion("ck_incidente_tipo"))
+            .contains("EJECUCION", "COMPENSACION", "RIESGO_EXTERNO");
+        assertThat(definicionRestriccion("ck_incidente_estado"))
+            .contains("ABIERTO", "REINTENTANDO", "RESUELTO", "CERRADO");
     }
 
     @Test
@@ -414,6 +443,7 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
     void estadosDeEjecucionYEventoExterno() {
         assertThat(contarChecks("intento_ejecucion")).isEqualTo(1L);
         assertThat(contarChecks("evento_externo")).isZero();
+        assertThat(contarChecks("incidente")).isEqualTo(2L);
     }
 
     private List<String> columnas(String tabla) {

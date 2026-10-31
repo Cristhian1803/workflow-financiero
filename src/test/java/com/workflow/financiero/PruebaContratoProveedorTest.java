@@ -252,6 +252,38 @@ class PruebaContratoProveedorTest extends PruebaProveedorFinancieroBase {
     }
 
     @Test
+    @DisplayName("El error definitivo simulado no crea ninguna operación")
+    void errorDefinitivoSimuladoNoCreaOperacion() throws Exception {
+        OperacionFinanciera reserva = operacion(AccionFinanciera.RESERVA);
+        fallos.configurar(
+            reserva.clave(),
+            ModoFalloSimulador.ERROR_DEFINITIVO
+        );
+
+        reservar(reserva)
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.codigo").value("DATOS_INVALIDOS"));
+
+        assertThat(contar(AccionFinanciera.RESERVA)).isZero();
+    }
+
+    @Test
+    @DisplayName("El conflicto de idempotencia simulado no crea efecto")
+    void conflictoIdempotenciaSimuladoNoCreaEfecto() throws Exception {
+        OperacionFinanciera reserva = operacion(AccionFinanciera.RESERVA);
+        fallos.configurar(
+            reserva.clave(),
+            ModoFalloSimulador.CONFLICTO_IDEMPOTENCIA
+        );
+
+        reservar(reserva)
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.codigo").value("CONFLICTO_DATOS"));
+
+        assertThat(contar(AccionFinanciera.RESERVA)).isZero();
+    }
+
+    @Test
     @DisplayName("Una confirmación con respuesta perdida conserva el efecto")
     void confirmacionConRespuestaPerdidaConservaEfecto() throws Exception {
         OperacionFinanciera reserva = operacion(AccionFinanciera.RESERVA);
