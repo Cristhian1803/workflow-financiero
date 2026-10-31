@@ -17,6 +17,7 @@ public abstract class PruebaIntegracionBase {
         new PostgreSQLContainer<>("postgres:16-alpine");
 
     static final String SECRETO_JWT = generarSecreto();
+    static final String SECRETO_RIESGO = generarSecreto();
     static final String EMISOR_JWT = "workflow-financiero-pruebas";
     static final long EXPIRACION_JWT_MINUTOS = 60;
 
@@ -34,6 +35,22 @@ public abstract class PruebaIntegracionBase {
         registro.add(
             "seguridad.jwt.expiracion-minutos",
             () -> EXPIRACION_JWT_MINUTOS
+        );
+        registro.add(
+            "flujo.riesgo-externo.secreto",
+            () -> SECRETO_RIESGO
+        );
+        registro.add(
+            "flujo.riesgo-externo.ventana-tiempo",
+            () -> "PT5M"
+        );
+        registro.add(
+            "flujo.riesgo-externo.reintento",
+            () -> "PT0S"
+        );
+        registro.add(
+            "flujo.riesgo-externo.maximo-intentos",
+            () -> 3
         );
     }
 

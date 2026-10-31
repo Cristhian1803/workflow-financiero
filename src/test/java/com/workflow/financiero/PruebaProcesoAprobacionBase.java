@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.workflow.financiero.api.error.FiltroFirmaRiesgoExterno;
 import com.workflow.financiero.aplicacion.puerto.PuertoProceso;
 import com.workflow.financiero.aplicacion.servicio.ServicioIncidente;
 import com.workflow.financiero.aplicacion.servicio.ServicioIntencionEjecucion;
@@ -13,7 +14,11 @@ import com.workflow.financiero.aplicacion.simulador.ConfiguracionFallosSimulador
 import com.workflow.financiero.infraestructura.ejecucion.TrabajadorCompensacion;
 import com.workflow.financiero.infraestructura.ejecucion.TrabajadorEjecucion;
 import com.workflow.financiero.infraestructura.ejecucion.TrabajadorRecuperacionEjecucion;
+import com.workflow.financiero.infraestructura.ejecucion.TrabajadorRiesgoExterno;
+import com.workflow.financiero.infraestructura.seguridad.FirmaRiesgoExterno;
 import com.workflow.financiero.infraestructura.seguridad.SembradorUsuariosDemo;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +60,8 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
     static final String RUTA_TAREAS = "/api/v1/tareas-aprobacion";
     static final String RUTA_NOTIFICACIONES = "/api/v1/notificaciones";
     static final String RUTA_INCIDENTES = "/api/v1/incidentes";
+    static final String RUTA_RIESGO = FiltroFirmaRiesgoExterno.RUTA;
+    static final String PROVEEDOR_RIESGO = "proveedor-riesgo-simulado";
     static final String RUTA_LOGIN =
         "/api/v1/autenticacion/iniciar-sesion";
     static final String CLAVE_PROCESO = "aprobacionFinanciera";
@@ -97,6 +104,12 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
     TrabajadorCompensacion trabajadorCompensacion;
 
     @Autowired
+    TrabajadorRiesgoExterno trabajadorRiesgo;
+
+    @Autowired
+    ProveedorRiesgoSimuladoDirecto proveedorRiesgo;
+
+    @Autowired
     ServicioIntencionEjecucion servicioIntencion;
 
     @Autowired
@@ -116,7 +129,10 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
         limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
         jdbcTemplate.execute("TRUNCATE TABLE operacion_simulada");
+        jdbcTemplate.execute(
+            "TRUNCATE TABLE evento_externo, evaluacion_riesgo");
         proveedorDirecto.reiniciar();
+        proveedorRiesgo.reiniciar();
         sembrador.sembrar();
         activarUsuariosDemo();
     }
@@ -126,7 +142,10 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
         limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
         jdbcTemplate.execute("TRUNCATE TABLE operacion_simulada");
+        jdbcTemplate.execute(
+            "TRUNCATE TABLE evento_externo, evaluacion_riesgo");
         proveedorDirecto.reiniciar();
+        proveedorRiesgo.reiniciar();
         activarUsuariosDemo();
     }
 
@@ -392,6 +411,14 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
     String estadoRevision(String revisionId) {
         return jdbcTemplate.queryForObject(
             "SELECT revisoli_estado FROM revision_solicitud WHERE revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    String nivelRevision(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT revisoli_nivel_riesgo FROM revision_solicitud "
+                + "WHERE revisoli_id = ?",
             String.class,
             UUID.fromString(revisionId));
     }
@@ -783,19 +810,195 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
         managementService.executeJob(ejecutable.getId());
     }
 
-    void enviarRiesgoExterno(
-        String procesoId,
-        boolean resuelto,
-        String nivel
-    ) {
-        puertoProceso.enviarMensaje(
-            MENSAJE_RIESGO,
-            procesoId,
-            Map.of(
-                "riesgoExternoResuelto", resuelto,
-                "nivelRiesgoExterno", nivel
-            )
+    int ejecutarRiesgoExterno() {
+        return trabajadorRiesgo.procesarPendientes();
+    }
+
+    ResultActions notificarRiesgo(JsonNode creada, String nivel)
+        throws Exception {
+        return notificarRiesgo(
+            creada.get("id").asText(),
+            creada.get("revision").asInt(),
+            nivel,
+            "evt-" + UUID.randomUUID(),
+            Instant.now(),
+            Instant.now().toString(),
+            null
         );
+    }
+
+    ResultActions notificarRiesgo(
+        String solicitudId,
+        int numeroRevision,
+        String nivel,
+        String identificadorEvento,
+        Instant fechaProveedor,
+        String timestamp,
+        String firma
+    ) throws Exception {
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("proveedor", PROVEEDOR_RIESGO);
+        cuerpo.put("identificadorEvento", identificadorEvento);
+        cuerpo.put("identificadorSolicitud", solicitudId);
+        cuerpo.put("numeroRevision", numeroRevision);
+        cuerpo.put("nivelRiesgo", nivel);
+        cuerpo.put("fechaProveedor", fechaProveedor);
+        cuerpo.put("resultado", "Evaluación externa de prueba");
+
+        String json = objectMapper.writeValueAsString(cuerpo);
+        String firmaFinal = firma == null
+            ? FirmaRiesgoExterno.firmar(
+                SECRETO_RIESGO,
+                PROVEEDOR_RIESGO,
+                identificadorEvento,
+                timestamp,
+                json.getBytes(StandardCharsets.UTF_8))
+            : firma;
+
+        return mockMvc.perform(post(RUTA_RIESGO)
+            .header(
+                FiltroFirmaRiesgoExterno.CABECERA_PROVEEDOR,
+                PROVEEDOR_RIESGO)
+            .header(
+                FiltroFirmaRiesgoExterno.CABECERA_EVENTO,
+                identificadorEvento)
+            .header(
+                FiltroFirmaRiesgoExterno.CABECERA_TIMESTAMP,
+                timestamp)
+            .header(
+                FiltroFirmaRiesgoExterno.CABECERA_FIRMA,
+                firmaFinal)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    ResultActions notificarRiesgoCrudo(
+        String json,
+        String identificadorEvento,
+        String timestamp,
+        String firma
+    ) throws Exception {
+        String firmaFinal = firma == null
+            ? FirmaRiesgoExterno.firmar(
+                SECRETO_RIESGO,
+                PROVEEDOR_RIESGO,
+                identificadorEvento,
+                timestamp,
+                json.getBytes(StandardCharsets.UTF_8))
+            : firma;
+        return mockMvc.perform(post(RUTA_RIESGO)
+            .header(
+                FiltroFirmaRiesgoExterno.CABECERA_PROVEEDOR,
+                PROVEEDOR_RIESGO)
+            .header(
+                FiltroFirmaRiesgoExterno.CABECERA_EVENTO,
+                identificadorEvento)
+            .header(
+                FiltroFirmaRiesgoExterno.CABECERA_TIMESTAMP,
+                timestamp)
+            .header(
+                FiltroFirmaRiesgoExterno.CABECERA_FIRMA,
+                firmaFinal)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(json.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    String estadoEventoExterno(String identificadorEvento) {
+        return jdbcTemplate.queryForObject(
+            "SELECT evenexte_estado FROM evento_externo "
+                + "WHERE evenexte_proveedor = ? "
+                + "AND evenexte_identificador_evento = ?",
+            String.class,
+            PROVEEDOR_RIESGO,
+            identificadorEvento);
+    }
+
+    String estadoEvaluacionRiesgo(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT evalries_estado FROM evaluacion_riesgo "
+                + "WHERE evalries_revisoli_id = ? "
+                + "AND evalries_origen = 'EXTERNO'",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    String nivelEvaluacionRiesgo(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT evalries_nivel FROM evaluacion_riesgo "
+                + "WHERE evalries_revisoli_id = ? "
+                + "AND evalries_origen = 'EXTERNO'",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    String claveEvaluacionRiesgo(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT evalries_clave FROM evaluacion_riesgo "
+                + "WHERE evalries_revisoli_id = ? "
+                + "AND evalries_origen = 'EXTERNO'",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    int intentosEvaluacionRiesgo(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT evalries_intentos FROM evaluacion_riesgo "
+                + "WHERE evalries_revisoli_id = ? "
+                + "AND evalries_origen = 'EXTERNO'",
+            Integer.class,
+            UUID.fromString(revisionId));
+    }
+
+    int intentosEventoExterno(String identificadorEvento) {
+        return jdbcTemplate.queryForObject(
+            "SELECT evenexte_intentos FROM evento_externo "
+                + "WHERE evenexte_proveedor = ? "
+                + "AND evenexte_identificador_evento = ?",
+            Integer.class,
+            PROVEEDOR_RIESGO,
+            identificadorEvento);
+    }
+
+    String referenciaEvaluacionRiesgo(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT evalries_referencia_solicitud FROM evaluacion_riesgo "
+                + "WHERE evalries_revisoli_id = ? "
+                + "AND evalries_origen = 'EXTERNO'",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    String errorEvaluacionRiesgo(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT evalries_error FROM evaluacion_riesgo "
+                + "WHERE evalries_revisoli_id = ? "
+                + "AND evalries_origen = 'EXTERNO'",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    int conflictosEventoExterno(String identificadorEvento) {
+        return jdbcTemplate.queryForObject(
+            "SELECT evenexte_conflictos FROM evento_externo "
+                + "WHERE evenexte_proveedor = ? "
+                + "AND evenexte_identificador_evento = ?",
+            Integer.class,
+            PROVEEDOR_RIESGO,
+            identificadorEvento);
+    }
+
+    long contarEventosExternos() {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM evento_externo", Long.class);
+    }
+
+    long contarEvaluacionesExternas(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM evaluacion_riesgo "
+                + "WHERE evalries_revisoli_id = ? "
+                + "AND evalries_origen = 'EXTERNO'",
+            Long.class,
+            UUID.fromString(revisionId));
     }
 
     void limpiarProcesos() {

@@ -127,6 +127,9 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new Restriccion("ck_decision_tipo", "c"),
             new Restriccion("ck_evaluacion_origen", "c"),
             new Restriccion("ck_evaluacion_nivel", "c"),
+            new Restriccion("ck_evaluacion_estado", "c"),
+            new Restriccion("ck_evento_externo_estado", "c"),
+            new Restriccion("ck_evento_externo_nivel", "c"),
             new Restriccion("ck_notificacion_estado", "c"),
             new Restriccion("ck_notificacion_destinatario", "c"),
             new Restriccion("pk_operacion_simulada", "p"),
@@ -217,11 +220,19 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"tarea_aprobacion", "tareapro_actualizado_en"},
             new String[] {"decision_aprobacion", "deciapro_fecha"},
             new String[] {"evaluacion_riesgo", "evalries_creado_en"},
+            new String[] {"evaluacion_riesgo", "evalries_actualizado_en"},
+            new String[] {"evaluacion_riesgo", "evalries_proximo_intento_en"},
+            new String[] {"evaluacion_riesgo", "evalries_reclamado_en"},
+            new String[] {"evaluacion_riesgo", "evalries_procesado_en"},
             new String[] {"intento_ejecucion", "inteejec_creado_en"},
             new String[] {"intento_ejecucion", "inteejec_actualizado_en"},
             new String[] {"intento_ejecucion", "inteejec_reclamado_en"},
             new String[] {"intento_ejecucion", "inteejec_proximo_intento_en"},
             new String[] {"evento_externo", "evenexte_recibido_en"},
+            new String[] {"evento_externo", "evenexte_fecha_proveedor"},
+            new String[] {"evento_externo", "evenexte_proximo_intento_en"},
+            new String[] {"evento_externo", "evenexte_procesado_en"},
+            new String[] {"evento_externo", "evenexte_actualizado_en"},
             new String[] {"notificacion", "noti_creado_en"},
             new String[] {"notificacion", "noti_leida_en"},
             new String[] {"registro_idempotencia", "regiidem_expira_en"},
@@ -304,8 +315,19 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"tarea_aprobacion", "tareapro_fecha_vencimiento"},
             new String[] {"tarea_aprobacion", "tareapro_actualizado_en"},
             new String[] {"decision_aprobacion", "deciapro_motivo"},
+            new String[] {"evaluacion_riesgo", "evalries_nivel"},
             new String[] {"evaluacion_riesgo", "evalries_resultado"},
             new String[] {"evaluacion_riesgo", "evalries_correlacion"},
+            new String[] {"evaluacion_riesgo", "evalries_clave"},
+            new String[] {"evaluacion_riesgo", "evalries_proveedor"},
+            new String[] {"evaluacion_riesgo", "evalries_identificador_evento"},
+            new String[] {"evaluacion_riesgo", "evalries_referencia_solicitud"},
+            new String[] {"evaluacion_riesgo", "evalries_proximo_intento_en"},
+            new String[] {"evaluacion_riesgo", "evalries_reclamado_en"},
+            new String[] {"evaluacion_riesgo", "evalries_reclamado_por"},
+            new String[] {"evaluacion_riesgo", "evalries_error"},
+            new String[] {"evaluacion_riesgo", "evalries_procesado_en"},
+            new String[] {"evaluacion_riesgo", "evalries_actualizado_en"},
             new String[] {"intento_ejecucion", "inteejec_referencia_externa"},
             new String[] {"intento_ejecucion", "inteejec_actualizado_en"},
             new String[] {"intento_ejecucion", "inteejec_reclamado_en"},
@@ -320,6 +342,16 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"intento_ejecucion", "inteejec_liberacion_referencia"},
             new String[] {"evento_externo", "evenexte_solifina_id"},
             new String[] {"evento_externo", "evenexte_revisoli_id"},
+            new String[] {"evento_externo", "evenexte_identificador_solicitud"},
+            new String[] {"evento_externo", "evenexte_numero_revision"},
+            new String[] {"evento_externo", "evenexte_nivel_riesgo"},
+            new String[] {"evento_externo", "evenexte_resultado"},
+            new String[] {"evento_externo", "evenexte_fecha_proveedor"},
+            new String[] {"evento_externo", "evenexte_correlacion"},
+            new String[] {"evento_externo", "evenexte_proximo_intento_en"},
+            new String[] {"evento_externo", "evenexte_error"},
+            new String[] {"evento_externo", "evenexte_procesado_en"},
+            new String[] {"evento_externo", "evenexte_actualizado_en"},
             new String[] {"notificacion", "noti_tareapro_id"},
             new String[] {"notificacion", "noti_destinatario_usua_id"},
             new String[] {"notificacion", "noti_destinatario_rol_codigo"},
@@ -350,6 +382,13 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         assertThat(tipoColumna("intento_ejecucion", "inteejec_intentos"))
             .isEqualTo("integer");
         assertThat(esNullable("evento_externo", "evenexte_proveedor")).isFalse();
+        assertThat(esNullable("evaluacion_riesgo", "evalries_estado")).isFalse();
+        assertThat(esNullable("evaluacion_riesgo", "evalries_intentos")).isFalse();
+        assertThat(esNullable("evaluacion_riesgo", "evalries_version")).isFalse();
+        assertThat(esNullable("evento_externo", "evenexte_estado")).isFalse();
+        assertThat(esNullable("evento_externo", "evenexte_intentos")).isFalse();
+        assertThat(esNullable("evento_externo", "evenexte_conflictos")).isFalse();
+        assertThat(esNullable("evento_externo", "evenexte_version")).isFalse();
         assertThat(esNullable("notificacion", "noti_tipo")).isFalse();
         assertThat(esNullable("registro_idempotencia", "regiidem_clave")).isFalse();
         assertThat(esNullable("operacion_simulada", "opersimu_clave")).isFalse();
@@ -385,7 +424,10 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             "idx_incidente_estado",
             "idx_incidente_revision",
             "idx_incidente_referencia",
-            "idx_intento_recuperacion"
+            "idx_intento_recuperacion",
+            "uq_evaluacion_externa_vigente",
+            "idx_evaluacion_externa_reclamable",
+            "idx_evento_externo_pendiente"
         );
 
         indices.forEach(indice -> assertThat(contarIndice(indice))
@@ -401,6 +443,16 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         assertThat(indice).contains("revisoli_identificador_proceso");
         assertThat(indice).containsIgnoringCase("WHERE");
         assertThat(indice).containsIgnoringCase("IS NOT NULL");
+    }
+
+    @Test
+    @DisplayName("Solo existe una evaluación externa vigente por revisión")
+    void indiceUnicoParcialDeEvaluacionExternaEstaDefinido() {
+        String indice = definicionIndice("uq_evaluacion_externa_vigente");
+        assertThat(indice).containsIgnoringCase("CREATE UNIQUE INDEX");
+        assertThat(indice).contains("evalries_revisoli_id");
+        assertThat(indice).containsIgnoringCase("WHERE");
+        assertThat(indice).contains("EXTERNO", "PENDIENTE", "RECIBIDA");
     }
 
     @Test
@@ -459,6 +511,24 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
                 "FALLIDA",
                 "REVISION_MANUAL"
             );
+        assertThat(definicionRestriccion("ck_evaluacion_estado"))
+            .contains(
+                "PENDIENTE",
+                "RECIBIDA",
+                "VENCIDA",
+                "MANUAL",
+                "OBSOLETA"
+            );
+        assertThat(definicionRestriccion("ck_evento_externo_estado"))
+            .contains(
+                "PENDIENTE",
+                "PROCESADO",
+                "DUPLICADO",
+                "CONFLICTO",
+                "OBSOLETO"
+            );
+        assertThat(definicionRestriccion("ck_evento_externo_nivel"))
+            .contains("BAJO", "MEDIO", "ALTO");
         assertThat(definicionRestriccion("ck_incidente_tipo"))
             .contains("EJECUCION", "COMPENSACION", "RIESGO_EXTERNO");
         assertThat(definicionRestriccion("ck_incidente_estado"))
@@ -472,10 +542,11 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
     }
 
     @Test
-    @DisplayName("La intención de ejecución ya tiene check y el evento externo todavía no")
+    @DisplayName("Las intenciones y el inbox tienen sus checks de estado")
     void estadosDeEjecucionYEventoExterno() {
         assertThat(contarChecks("intento_ejecucion")).isEqualTo(1L);
-        assertThat(contarChecks("evento_externo")).isZero();
+        assertThat(contarChecks("evaluacion_riesgo")).isEqualTo(3L);
+        assertThat(contarChecks("evento_externo")).isEqualTo(2L);
         assertThat(contarChecks("incidente")).isEqualTo(2L);
     }
 

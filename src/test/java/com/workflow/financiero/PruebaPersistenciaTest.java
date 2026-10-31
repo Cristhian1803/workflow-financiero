@@ -537,12 +537,15 @@ class PruebaPersistenciaTest extends PruebaIntegracionBase {
         jdbcTemplate.update(
             "INSERT INTO evento_externo ("
                 + "evenexte_id, evenexte_proveedor, evenexte_identificador_evento, "
+                + "evenexte_identificador_solicitud, evenexte_numero_revision, "
                 + "evenexte_solifina_id, evenexte_revisoli_id, evenexte_huella, "
                 + "evenexte_estado, evenexte_recibido_en) "
-                + "VALUES (?, ?, ?, CAST(? AS UUID), CAST(? AS UUID), ?, 'RECIBIDO', ?)",
+                + "VALUES (?, ?, ?, CAST(? AS UUID), 1, CAST(? AS UUID), "
+                + "CAST(? AS UUID), ?, 'PENDIENTE', ?)",
             id,
             proveedor,
             identificadorEvento,
+            solicitudId == null ? UUID.randomUUID() : solicitudId,
             solicitudId,
             revisionId,
             "huella-" + id,
