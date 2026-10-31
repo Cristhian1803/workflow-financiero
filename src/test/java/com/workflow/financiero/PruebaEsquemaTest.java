@@ -132,7 +132,8 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new Restriccion("uq_operacion_simulada_intencion_accion", "u"),
             new Restriccion("ck_operacion_simulada_accion", "c"),
             new Restriccion("ck_operacion_simulada_estado", "c"),
-            new Restriccion("ck_operacion_simulada_monto", "c")
+            new Restriccion("ck_operacion_simulada_monto", "c"),
+            new Restriccion("ck_intento_ejecucion_estado", "c")
         );
 
         restricciones.forEach(restriccion -> {
@@ -201,6 +202,8 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"evaluacion_riesgo", "evalries_creado_en"},
             new String[] {"intento_ejecucion", "inteejec_creado_en"},
             new String[] {"intento_ejecucion", "inteejec_actualizado_en"},
+            new String[] {"intento_ejecucion", "inteejec_reclamado_en"},
+            new String[] {"intento_ejecucion", "inteejec_proximo_intento_en"},
             new String[] {"evento_externo", "evenexte_recibido_en"},
             new String[] {"notificacion", "noti_creado_en"},
             new String[] {"notificacion", "noti_leida_en"},
@@ -282,6 +285,12 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"evaluacion_riesgo", "evalries_correlacion"},
             new String[] {"intento_ejecucion", "inteejec_referencia_externa"},
             new String[] {"intento_ejecucion", "inteejec_actualizado_en"},
+            new String[] {"intento_ejecucion", "inteejec_reclamado_en"},
+            new String[] {"intento_ejecucion", "inteejec_reclamado_por"},
+            new String[] {"intento_ejecucion", "inteejec_ultimo_error"},
+            new String[] {"intento_ejecucion", "inteejec_proximo_intento_en"},
+            new String[] {"intento_ejecucion", "inteejec_reserva_referencia"},
+            new String[] {"intento_ejecucion", "inteejec_confirmacion_referencia"},
             new String[] {"evento_externo", "evenexte_solifina_id"},
             new String[] {"evento_externo", "evenexte_revisoli_id"},
             new String[] {"notificacion", "noti_tareapro_id"},
@@ -301,6 +310,9 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         assertThat(esNullable("decision_aprobacion", "deciapro_decision")).isFalse();
         assertThat(esNullable("evaluacion_riesgo", "evalries_origen")).isFalse();
         assertThat(esNullable("intento_ejecucion", "inteejec_estado")).isFalse();
+        assertThat(esNullable("intento_ejecucion", "inteejec_intentos")).isFalse();
+        assertThat(tipoColumna("intento_ejecucion", "inteejec_intentos"))
+            .isEqualTo("integer");
         assertThat(esNullable("evento_externo", "evenexte_proveedor")).isFalse();
         assertThat(esNullable("notificacion", "noti_tipo")).isFalse();
         assertThat(esNullable("registro_idempotencia", "regiidem_clave")).isFalse();
@@ -325,7 +337,8 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             "idx_notificacion_estado",
             "idx_idempotencia_expira",
             "uq_revision_proceso",
-            "idx_operacion_simulada_intencion"
+            "idx_operacion_simulada_intencion",
+            "idx_intento_reclamacion"
         );
 
         indices.forEach(indice -> assertThat(contarIndice(indice))
@@ -378,6 +391,16 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             .contains("RESERVA", "CONFIRMACION", "LIBERACION");
         assertThat(definicionRestriccion("ck_operacion_simulada_estado"))
             .contains("RESERVADA", "CONFIRMADA", "LIBERADA");
+        assertThat(definicionRestriccion("ck_intento_ejecucion_estado"))
+            .contains(
+                "PENDIENTE",
+                "ENVIANDO",
+                "CONFIRMADA",
+                "RESULTADO_DESCONOCIDO",
+                "FALLIDA",
+                "COMPENSANDO",
+                "COMPENSADA"
+            );
     }
 
     @Test
@@ -387,9 +410,9 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
     }
 
     @Test
-    @DisplayName("Los estados de ejecución y evento externo todavía no tienen check")
-    void estadosFuturosNoTienenCheckTodavia() {
-        assertThat(contarChecks("intento_ejecucion")).isZero();
+    @DisplayName("La intención de ejecución ya tiene check y el evento externo todavía no")
+    void estadosDeEjecucionYEventoExterno() {
+        assertThat(contarChecks("intento_ejecucion")).isEqualTo(1L);
         assertThat(contarChecks("evento_externo")).isZero();
     }
 

@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada.TipoObservacion;
 import java.util.Arrays;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,12 +19,9 @@ class PruebaRutasProcesoTest extends PruebaProcesoAprobacionBase {
     void cincoMillonesSinTareas() throws Exception {
         JsonNode creada = verificarRuta(5_000_000, "NORMAL");
 
-        assertThat(observaciones(creada.get("idRevision").asText()))
-            .extracting(observacion -> observacion.tipo())
-            .containsExactlyInAnyOrder(
-                TipoObservacion.PREPARACION,
-                TipoObservacion.RESULTADO
-            );
+        String revisionId = creada.get("idRevision").asText();
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
+        assertThat(claveIntento(revisionId)).isNotBlank();
     }
 
     @Test
@@ -45,14 +41,10 @@ class PruebaRutasProcesoTest extends PruebaProcesoAprobacionBase {
         aprobar(idTareaAprobacion(solicitudId, "RIESGOS"), "riesgos", null)
             .andExpect(status().isOk());
 
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
-        assertThat(procesoFinalizado(procesoId)).isTrue();
-        assertThat(observaciones(revisionId))
-            .extracting(observacion -> observacion.tipo())
-            .containsExactlyInAnyOrder(
-                TipoObservacion.PREPARACION,
-                TipoObservacion.RESULTADO
-            );
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
+        assertThat(procesoActivo(procesoId)).isTrue();
+        assertThat(contarSuscripcionesEjecucion(procesoId)).isEqualTo(1);
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
     }
 
     @Test
@@ -150,7 +142,7 @@ class PruebaRutasProcesoTest extends PruebaProcesoAprobacionBase {
         );
 
         assertThat(creada.get("requiereEvaluacionExterna").asBoolean()).isTrue();
-        assertThat(observaciones(creada.get("idRevision").asText())).isEmpty();
+        assertThat(contarIntentos(creada.get("idRevision").asText())).isZero();
     }
 
     @Test
@@ -165,7 +157,7 @@ class PruebaRutasProcesoTest extends PruebaProcesoAprobacionBase {
         );
 
         assertThat(creada.get("requiereEvaluacionExterna").asBoolean()).isTrue();
-        assertThat(observaciones(creada.get("idRevision").asText())).isEmpty();
+        assertThat(contarIntentos(creada.get("idRevision").asText())).isZero();
     }
 
     private String claveTarea(String rol) {
@@ -197,9 +189,11 @@ class PruebaRutasProcesoTest extends PruebaProcesoAprobacionBase {
             .containsExactlyInAnyOrder(rolesEsperados);
 
         if (rolesEsperados.length == 0) {
-            assertThat(creada.get("estado").asText()).isEqualTo("APROBADA");
-            assertThat(procesoActivo(procesoId)).isFalse();
-            assertThat(procesoFinalizado(procesoId)).isTrue();
+            assertThat(creada.get("estado").asText()).isEqualTo("EJECUTANDO");
+            assertThat(procesoActivo(procesoId)).isTrue();
+            assertThat(contarSuscripcionesEjecucion(procesoId)).isEqualTo(1);
+            assertThat(estadoIntento(creada.get("idRevision").asText()))
+                .isEqualTo("PENDIENTE");
         } else {
             assertThat(creada.get("estado").asText())
                 .isEqualTo("PENDIENTE_APROBACION");

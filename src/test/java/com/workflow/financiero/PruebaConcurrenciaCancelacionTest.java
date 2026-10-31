@@ -149,7 +149,7 @@ class PruebaConcurrenciaCancelacionTest extends PruebaProcesoAprobacionBase {
         assertThat(contarDecisionesDeRevision(revisionId)).isZero();
         assertThat(contarEventosTipoDeRevision(
             revisionId, "APROBACION_REGISTRADA")).isZero();
-        assertThat(observaciones(revisionId)).isEmpty();
+        assertThat(contarIntentos(revisionId)).isZero();
         // La cancelación real del proceso se conecta en una iteración posterior.
         assertThat(procesoActivo(procesoId)).isTrue();
     }
@@ -184,14 +184,14 @@ class PruebaConcurrenciaCancelacionTest extends PruebaProcesoAprobacionBase {
             revisionId, "CANCELACION_SOLICITADA")).isEqualTo(1);
         assertThat(contarEventosTipoDeRevision(
             revisionId, "TAREA_CANCELADA")).isEqualTo(1);
-        assertThat(observaciones(revisionId)).isEmpty();
+        assertThat(contarIntentos(revisionId)).isZero();
         assertThat(adaptadorCancelacion.llamadas()).hasSize(1);
         assertThat(procesoActivo(procesoId)).isTrue();
     }
 
     @Test
-    @DisplayName("Cancelar una revisión aprobada controlada no la deja ejecutada")
-    void cancelarRevisionAprobadaControlada() throws Exception {
+    @DisplayName("Una revisión en EJECUTANDO no se cancela con el control local")
+    void cancelarRevisionEnEjecucionNoEstaPermitido() throws Exception {
         JsonNode creada = crear("demo", 25_000_000, "NORMAL");
         String solicitudId = creada.get("id").asText();
         String revisionId = creada.get("idRevision").asText();
@@ -200,19 +200,19 @@ class PruebaConcurrenciaCancelacionTest extends PruebaProcesoAprobacionBase {
         aprobar(tareaId, "supervisor", null)
             .andExpect(status().isOk());
 
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
-        // La ejecución controlada actual no representa un efecto financiero.
-        assertThat(observaciones(revisionId)).isNotEmpty();
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
 
-        ResultadoCancelacionSolicitud resultado = cancelar(
-            solicitudId, revisionId, "demo", "Se cancela antes de ejecutar");
+        assertThatThrownBy(() -> cancelar(
+            solicitudId, revisionId, "demo", "Se cancela antes de ejecutar"))
+            .isInstanceOf(TransicionEstadoInvalidaException.class);
 
-        assertThat(resultado.estadoRevision()).isEqualTo(EstadoRevision.CANCELADA);
-        assertThat(estadoRevision(revisionId)).isEqualTo("CANCELADA");
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
         assertThat(contarDecisionesDeRevision(revisionId)).isEqualTo(1);
         assertThat(contarEventosTipoDeRevision(
-            revisionId, "CANCELACION_SOLICITADA")).isEqualTo(1);
-        assertThat(adaptadorCancelacion.llamadas()).hasSize(1);
+            revisionId, "CANCELACION_SOLICITADA")).isZero();
+        assertThat(adaptadorCancelacion.llamadas()).isEmpty();
     }
 
     @Test
@@ -466,7 +466,7 @@ class PruebaConcurrenciaCancelacionTest extends PruebaProcesoAprobacionBase {
             .filter(estado -> estado.endsWith(":PENDIENTE"))
             .count()).isZero();
         assertThat(contarDecisionesDeRevision(revisionId)).isBetween(0L, 1L);
-        assertThat(observaciones(revisionId)).isEmpty();
+        assertThat(contarIntentos(revisionId)).isZero();
         assertThat(procesoActivo(procesoId)).isTrue();
     }
 

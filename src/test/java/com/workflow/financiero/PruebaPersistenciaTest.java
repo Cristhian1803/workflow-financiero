@@ -608,7 +608,7 @@ class PruebaPersistenciaTest extends PruebaIntegracionBase {
                 + "inteejec_id, inteejec_revisoli_id, inteejec_clave, inteejec_huella, "
                 + "inteejec_estado, inteejec_referencia_externa, inteejec_version, "
                 + "inteejec_creado_en, inteejec_actualizado_en) "
-                + "VALUES (?, ?, ?, ?, 'PENDIENTE_ENVIO', CAST(? AS VARCHAR), 0, ?, "
+                + "VALUES (?, ?, ?, ?, 'PENDIENTE', CAST(? AS VARCHAR), 0, ?, "
                 + "CAST(? AS TIMESTAMP WITH TIME ZONE))",
             id,
             revisionId,

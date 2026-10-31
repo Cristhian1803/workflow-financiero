@@ -94,8 +94,10 @@ class PruebaConcurrenciaAprobacionTest extends PruebaProcesoAprobacionBase {
         assertThat(contarEventosTipoDeRevision(
             revisionId, "APROBACION_REGISTRADA")).isEqualTo(1);
         assertThat(estadoTarea(tareaId)).isEqualTo("APROBADA");
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
-        assertThat(procesoFinalizado(procesoId)).isTrue();
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
+        assertThat(procesoActivo(procesoId)).isTrue();
+        assertThat(contarSuscripcionesEjecucion(procesoId)).isEqualTo(1);
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
         assertThat(rolesTareasMotor(procesoId)).isEmpty();
     }
 
@@ -226,7 +228,8 @@ class PruebaConcurrenciaAprobacionTest extends PruebaProcesoAprobacionBase {
         aprobar(tareaId, "supervisor", null).andExpect(status().isOk());
 
         assertThat(estadoTarea(tareaId)).isEqualTo("APROBADA");
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
+        assertThat(procesoActivo(procesoId)).isTrue();
         assertThat(buscarTimer(procesoId, "notificarSupervisor24h")).isNull();
         assertThat(buscarTimer(procesoId, "reasignarSupervisor48h")).isNull();
         assertThat(servicioNotificacion.notificarEscalamiento(
@@ -272,11 +275,13 @@ class PruebaConcurrenciaAprobacionTest extends PruebaProcesoAprobacionBase {
             .andReturn());
         assertThat(respuesta.get("delegado").asBoolean()).isTrue();
         assertThat(estadoTarea(tareaId)).isEqualTo("APROBADA");
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
         assertThat(contarDecisionesDeRevision(revisionId)).isEqualTo(1);
         assertThat(rolRegistrado(solicitudId, "gerente"))
             .isEqualTo("SUPERVISOR");
-        assertThat(procesoFinalizado(procesoId)).isTrue();
+        assertThat(procesoActivo(procesoId)).isTrue();
+        assertThat(contarSuscripcionesEjecucion(procesoId)).isEqualTo(1);
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
     }
 
     @RepeatedTest(3)
@@ -338,7 +343,9 @@ class PruebaConcurrenciaAprobacionTest extends PruebaProcesoAprobacionBase {
             assertThat(contarNotificacionesTipoDeRevision(
                 revisionId, "REASIGNACION_48H")).isZero();
             assertThat(asignadoTarea(tareaId)).isNull();
-            assertThat(procesoFinalizado(procesoId)).isTrue();
+            assertThat(procesoActivo(procesoId)).isTrue();
+            assertThat(contarSuscripcionesEjecucion(procesoId)).isEqualTo(1);
+            assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
             if (errorTimer.get() != null) {
                 assertThat(errorTimer.get()).isInstanceOfAny(
                     IllegalStateException.class,

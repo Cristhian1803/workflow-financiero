@@ -7,7 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workflow.financiero.aplicacion.puerto.PuertoProceso;
-import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada;
+import com.workflow.financiero.aplicacion.servicio.ServicioIntencionEjecucion;
+import com.workflow.financiero.infraestructura.ejecucion.TrabajadorEjecucion;
 import com.workflow.financiero.infraestructura.seguridad.SembradorUsuariosDemo;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -79,7 +80,13 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
     ManagementService managementService;
 
     @Autowired
-    AdaptadorEjecucionControlada adaptadorEjecucion;
+    TrabajadorEjecucion trabajadorEjecucion;
+
+    @Autowired
+    ServicioIntencionEjecucion servicioIntencion;
+
+    @Autowired
+    ProveedorFinancieroSimuladoDirecto proveedorDirecto;
 
     @Autowired
     PuertoProceso puertoProceso;
@@ -88,6 +95,8 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
     void prepararBase() {
         limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
+        jdbcTemplate.execute("TRUNCATE TABLE operacion_simulada");
+        proveedorDirecto.reiniciar();
         sembrador.sembrar();
         activarUsuariosDemo();
     }
@@ -96,6 +105,8 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
     void limpiarBase() {
         limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
+        jdbcTemplate.execute("TRUNCATE TABLE operacion_simulada");
+        proveedorDirecto.reiniciar();
         activarUsuariosDemo();
     }
 
@@ -492,10 +503,56 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
             .count();
     }
 
-    List<AdaptadorEjecucionControlada.ObservacionEjecucion> observaciones(
-        String revisionId
-    ) {
-        return adaptadorEjecucion.observaciones(UUID.fromString(revisionId));
+    int ejecutarTrabajador() {
+        return trabajadorEjecucion.ejecutarPendientes();
+    }
+
+    long contarIntentos(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM intento_ejecucion "
+                + "WHERE inteejec_revisoli_id = ?",
+            Long.class,
+            UUID.fromString(revisionId));
+    }
+
+    String estadoIntento(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT inteejec_estado FROM intento_ejecucion "
+                + "WHERE inteejec_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    String claveIntento(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT inteejec_clave FROM intento_ejecucion "
+                + "WHERE inteejec_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    String huellaIntento(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT inteejec_huella FROM intento_ejecucion "
+                + "WHERE inteejec_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    String referenciaConfirmacion(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT inteejec_confirmacion_referencia FROM intento_ejecucion "
+                + "WHERE inteejec_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    long contarSuscripcionesEjecucion(String procesoId) {
+        return runtimeService.createExecutionQuery()
+            .processInstanceId(procesoId)
+            .messageEventSubscriptionName(
+                ServicioIntencionEjecucion.MENSAJE_EJECUCION_FINALIZADA)
+            .count();
     }
 
     Job buscarTimer(String procesoId, String actividad) {

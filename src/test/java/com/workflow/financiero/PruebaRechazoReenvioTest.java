@@ -13,7 +13,6 @@ import com.workflow.financiero.aplicacion.servicio.SolicitudDetalle;
 import com.workflow.financiero.aplicacion.servicio.UsuarioActual;
 import com.workflow.financiero.dominio.excepcion.TransicionEstadoInvalidaException;
 import com.workflow.financiero.dominio.modelo.RevisionSolicitud;
-import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada.TipoObservacion;
 import com.workflow.financiero.infraestructura.persistencia.RevisionSolicitudRepositorio;
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -133,7 +132,7 @@ class PruebaRechazoReenvioTest extends PruebaProcesoAprobacionBase {
         assertThat(estadoRevision(revisionId)).isEqualTo("RECHAZADA");
         assertThat(procesoFinalizado(procesoId)).isTrue();
         assertThat(contarDecisionesDeRevision(revisionId)).isEqualTo(2);
-        assertThat(observaciones(revisionId)).isEmpty();
+        assertThat(contarIntentos(revisionId)).isZero();
         assertThat(tiposEventoDeRevision(revisionId))
             .contains("APROBACION_REGISTRADA", "RECHAZO_REGISTRADO");
     }
@@ -278,20 +277,16 @@ class PruebaRechazoReenvioTest extends PruebaProcesoAprobacionBase {
         String revision2 = respuesta.get("idRevision").asText();
         String proceso2 = identificadorProcesoDeRevision(revision2);
 
-        assertThat(respuesta.get("estado").asText()).isEqualTo("APROBADA");
+        assertThat(respuesta.get("estado").asText()).isEqualTo("EJECUTANDO");
         assertThat(respuesta.get("nivelRiesgo").asText()).isEqualTo("BAJO");
         assertThat(listaTexto(respuesta.get("aprobacionesRequeridas")))
             .isEmpty();
         assertThat(rolesTareasNegocioDeRevision(revision2)).isEmpty();
-        assertThat(procesoFinalizado(proceso2)).isTrue();
-        assertThat(observaciones(revision2))
-            .extracting(observacion -> observacion.tipo())
-            .containsExactlyInAnyOrder(
-                TipoObservacion.PREPARACION,
-                TipoObservacion.RESULTADO
-            );
+        assertThat(procesoActivo(proceso2)).isTrue();
+        assertThat(contarSuscripcionesEjecucion(proceso2)).isEqualTo(1);
+        assertThat(estadoIntento(revision2)).isEqualTo("PENDIENTE");
         assertThat(tiposEventoDeRevision(revision2))
-            .contains("EJECUCION_PREPARADA", "EJECUCION_CONTROLADA");
+            .contains("EJECUCION_INICIADA");
     }
 
     @Test
@@ -598,12 +593,12 @@ class PruebaRechazoReenvioTest extends PruebaProcesoAprobacionBase {
         assertThat(procesoActivo(procesoId)).isFalse();
         assertThat(procesoFinalizado(procesoId)).isTrue();
         assertThat(rolesTareasMotor(procesoId)).isEmpty();
-        assertThat(observaciones(revisionId)).isEmpty();
+        assertThat(contarIntentos(revisionId)).isZero();
         assertThat(tiposEventoDeRevision(revisionId))
             .contains("RECHAZO_REGISTRADO", "TAREA_CANCELADA")
             .doesNotContain(
-                "EJECUCION_PREPARADA",
-                "EJECUCION_CONTROLADA"
+                "EJECUCION_INICIADA",
+                "EJECUCION_CONFIRMADA"
             );
         assertThat(contarDecisionesDeRevision(revisionId)).isEqualTo(1);
         assertThat(contarSuscripcionesRiesgo(procesoId)).isZero();

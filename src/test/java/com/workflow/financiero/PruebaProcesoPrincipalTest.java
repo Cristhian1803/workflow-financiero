@@ -14,9 +14,7 @@ import com.workflow.financiero.aplicacion.servicio.TareaProceso;
 import com.workflow.financiero.aplicacion.servicio.UsuarioActual;
 import com.workflow.financiero.dominio.estado.EstadoRevision;
 import com.workflow.financiero.dominio.excepcion.ErrorSimuladoPrueba;
-import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada;
-import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada.ObservacionEjecucion;
-import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada.TipoObservacion;
+import com.workflow.financiero.infraestructura.ejecucion.TrabajadorEjecucion;
 import com.workflow.financiero.infraestructura.seguridad.SembradorUsuariosDemo;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -114,7 +112,10 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
     ServicioInicioProceso servicioInicioProceso;
 
     @Autowired
-    AdaptadorEjecucionControlada adaptadorEjecucion;
+    TrabajadorEjecucion trabajadorEjecucion;
+
+    @Autowired
+    ProveedorFinancieroSimuladoDirecto proveedorDirecto;
 
     @Autowired
     SembradorUsuariosDemo sembrador;
@@ -123,6 +124,8 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
     void preparar() {
         limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
+        jdbcTemplate.execute("TRUNCATE TABLE operacion_simulada");
+        proveedorDirecto.reiniciar();
         sembrador.sembrar();
         jdbcTemplate.update(
             "UPDATE usuario SET usua_activo = TRUE "
@@ -135,6 +138,8 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
     void limpiar() {
         limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
+        jdbcTemplate.execute("TRUNCATE TABLE operacion_simulada");
+        proveedorDirecto.reiniciar();
     }
 
     @Test
@@ -163,7 +168,9 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(proceso.getFlowElement("verificarRiesgoExterno")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("marcarAprobada")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("prepararEjecucion")).isInstanceOf(ServiceTask.class);
-        assertThat(proceso.getFlowElement("registrarResultado")).isInstanceOf(ServiceTask.class);
+        assertThat(proceso.getFlowElement("esperarResultadoEjecucion"))
+            .isInstanceOf(IntermediateCatchEvent.class);
+        assertThat(proceso.getFlowElement("marcarEjecutada")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("registrarRechazo")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("decidirAprobaciones")).isNotNull();
         assertThat(proceso.getFlowElement("decidirRiesgoExterno")).isNotNull();
@@ -283,7 +290,7 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
             Map.entry("verificarRiesgoExterno", "delegadoVerificarRiesgoExterno"),
             Map.entry("marcarAprobada", "delegadoMarcarAprobada"),
             Map.entry("prepararEjecucion", "delegadoPrepararEjecucion"),
-            Map.entry("registrarResultado", "delegadoRegistrarResultado"),
+            Map.entry("marcarEjecutada", "delegadoMarcarEjecutada"),
             Map.entry("registrarRechazo", "delegadoRegistrarRechazo"),
             Map.entry("notificarSupervisor", "delegadoNotificarEscalamiento"),
             Map.entry("notificarGerente", "delegadoNotificarEscalamiento"),
@@ -337,6 +344,29 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
             .orElseThrow();
 
         assertThat(mensaje.getId()).isEqualTo("mensajeRiesgoEvaluado");
+    }
+
+    @Test
+    @DisplayName("La espera de ejecución usa el mensaje EJECUCION_FINALIZADA")
+    void esperaEjecucionUsaElMensajeEsperado() {
+        BpmnModel modelo = modelo();
+        IntermediateCatchEvent espera = (IntermediateCatchEvent) modelo
+            .getMainProcess()
+            .getFlowElement("esperarResultadoEjecucion");
+
+        MessageEventDefinition definicionMensaje = espera.getEventDefinitions().stream()
+            .filter(MessageEventDefinition.class::isInstance)
+            .map(MessageEventDefinition.class::cast)
+            .findFirst()
+            .orElseThrow();
+        assertThat(definicionMensaje.getMessageRef())
+            .isEqualTo("EJECUCION_FINALIZADA");
+        Message mensaje = modelo.getMessages().stream()
+            .filter(candidato -> "EJECUCION_FINALIZADA".equals(candidato.getName()))
+            .findFirst()
+            .orElseThrow();
+
+        assertThat(mensaje.getId()).isEqualTo("mensajeEjecucionFinalizada");
     }
 
     @Test
@@ -403,40 +433,51 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
     }
 
     @Test
-    @DisplayName("Cinco millones recorre el camino automático y termina APROBADA")
-    void caminoAutomaticoTerminaAprobada() {
+    @DisplayName("Cinco millones recorre el camino automático y espera la ejecución")
+    void caminoAutomaticoEsperaEjecucion() {
         UsuarioActual demo = servicioUsuarioActual.obtenerActual("demo");
         SolicitudDetalle creada = registrar(demo, 5_000_000);
 
-        assertThat(creada.estado()).isEqualTo(EstadoRevision.APROBADA);
+        assertThat(creada.estado()).isEqualTo(EstadoRevision.EJECUTANDO);
         String procesoId = identificadorProceso(creada.id());
         assertThat(procesoId).isNotBlank();
         assertThat(runtimeService.createProcessInstanceQuery()
             .processInstanceId(procesoId)
-            .count()).isZero();
-
-        HistoricProcessInstance historica = historyService
-            .createHistoricProcessInstanceQuery()
+            .count()).isEqualTo(1);
+        assertThat(runtimeService.createExecutionQuery()
             .processInstanceId(procesoId)
-            .singleResult();
-        assertThat(historica).isNotNull();
-        assertThat(historica.getEndTime()).isNotNull();
+            .messageEventSubscriptionName("EJECUCION_FINALIZADA")
+            .count()).isEqualTo(1);
         assertThat(taskService.createTaskQuery()
             .processInstanceId(procesoId)
             .count()).isZero();
         assertThat(contarTareasAprobacionTotales()).isZero();
+        assertThat(estadoIntento(creada.idRevision().toString()))
+            .isEqualTo("PENDIENTE");
 
         assertThat(tiposEvento(creada.id())).contains(
             "PROCESO_INICIADO",
-            "EJECUCION_PREPARADA",
-            "EJECUCION_CONTROLADA"
+            "EJECUCION_INICIADA"
         );
-        assertThat(adaptadorEjecucion.observaciones(creada.idRevision()))
-            .extracting(ObservacionEjecucion::tipo)
-            .containsExactlyInAnyOrder(
-                TipoObservacion.PREPARACION,
-                TipoObservacion.RESULTADO
-            );
+    }
+
+    @Test
+    @DisplayName("El trabajador confirma el camino automático y termina EJECUTADA")
+    void caminoAutomaticoTerminaEjecutada() {
+        UsuarioActual demo = servicioUsuarioActual.obtenerActual("demo");
+        SolicitudDetalle creada = registrar(demo, 5_000_000);
+
+        trabajadorEjecucion.ejecutarPendientes();
+
+        assertThat(creada.id()).isNotNull();
+        assertThat(estadoRevision(creada.idRevision().toString()))
+            .isEqualTo("EJECUTADA");
+        assertThat(estadoIntento(creada.idRevision().toString()))
+            .isEqualTo("CONFIRMADA");
+        assertThat(tiposEvento(creada.id())).contains(
+            "EJECUCION_INICIADA",
+            "EJECUCION_CONFIRMADA"
+        );
     }
 
     @Test
@@ -477,7 +518,7 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(tareaProceso.estado()).isEqualTo("PENDIENTE");
         assertThat(tareaProceso.fechaVencimiento()).isNotNull();
         assertThat(contarTareasAprobacionTotales()).isEqualTo(1);
-        assertThat(adaptadorEjecucion.observaciones(creada.idRevision())).isEmpty();
+        assertThat(contarIntentos(creada.idRevision().toString())).isZero();
     }
 
     @Test
@@ -486,11 +527,13 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         UsuarioActual demo = servicioUsuarioActual.obtenerActual("demo");
         SolicitudDetalle creada = registrar(demo, 5_000_000);
 
+        trabajadorEjecucion.ejecutarPendientes();
+
         EstadoProceso estado = servicioConsulta.proceso(creada.id(), demo);
 
         assertThat(estado.iniciado()).isTrue();
         assertThat(estado.finalizado()).isTrue();
-        assertThat(estado.estadoRevision()).isEqualTo(EstadoRevision.APROBADA);
+        assertThat(estado.estadoRevision()).isEqualTo(EstadoRevision.EJECUTADA);
         assertThat(estado.actividadesActivas()).isEmpty();
         assertThat(estado.tareas()).isEmpty();
         assertThat(contarTareasAprobacionTotales()).isZero();
@@ -536,6 +579,8 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(contarInstanciasProceso()).isZero();
         assertThat(contarHistoricosProceso()).isZero();
         assertThat(contarTareasAprobacionTotales()).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM intento_ejecucion", Long.class)).isZero();
     }
 
     private SolicitudDetalle registrar(UsuarioActual usuario, long monto) {
@@ -570,6 +615,30 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
             String.class,
             solicitudId
         );
+    }
+
+    private String estadoRevision(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT revisoli_estado FROM revision_solicitud "
+                + "WHERE revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    private String estadoIntento(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT inteejec_estado FROM intento_ejecucion "
+                + "WHERE inteejec_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    private Long contarIntentos(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM intento_ejecucion "
+                + "WHERE inteejec_revisoli_id = ?",
+            Long.class,
+            UUID.fromString(revisionId));
     }
 
     private Long contarSolicitudes() {
