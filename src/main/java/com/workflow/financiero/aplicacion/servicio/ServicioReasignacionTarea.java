@@ -2,6 +2,7 @@ package com.workflow.financiero.aplicacion.servicio;
 
 import com.workflow.financiero.aplicacion.configuracion.PropiedadesAprobacion;
 import com.workflow.financiero.aplicacion.puerto.PuertoProceso;
+import com.workflow.financiero.dominio.estado.EstadoRevision;
 import com.workflow.financiero.dominio.estado.EstadoTareaAprobacion;
 import com.workflow.financiero.dominio.evento.TipoEventoSolicitud;
 import com.workflow.financiero.dominio.modelo.Notificacion;
@@ -12,9 +13,11 @@ import com.workflow.financiero.dominio.modelo.TipoNotificacion;
 import com.workflow.financiero.dominio.modelo.Usuario;
 import com.workflow.financiero.infraestructura.persistencia.NotificacionRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.RolRepositorio;
+import com.workflow.financiero.infraestructura.persistencia.SolicitudFinancieraRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.TareaAprobacionRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.UsuarioRepositorio;
 import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,6 +35,7 @@ public class ServicioReasignacionTarea {
     private static final String ROL_ADMINISTRADOR = "ADMINISTRADOR";
 
     private final TareaAprobacionRepositorio tareaRepositorio;
+    private final SolicitudFinancieraRepositorio solicitudRepositorio;
     private final UsuarioRepositorio usuarioRepositorio;
     private final RolRepositorio rolRepositorio;
     private final NotificacionRepositorio notificacionRepositorio;
@@ -45,8 +49,25 @@ public class ServicioReasignacionTarea {
             return false;
         }
 
+        UUID solicitudId = tareaRepositorio
+            .buscarSolicitudIdPorIdentificadorTareaMotor(idTareaMotor)
+            .orElse(null);
+        if (solicitudId == null) {
+            log.info(
+                "No se reasigna la tarea de motor {}: la tarea de negocio no existe",
+                idTareaMotor
+            );
+            return false;
+        }
+
+        // La solicitud se bloquea antes que la tarea para respetar el mismo
+        // orden que la aprobación y la cancelación.
+        if (solicitudRepositorio.buscarPorIdParaActualizar(solicitudId).isEmpty()) {
+            return false;
+        }
+
         TareaAprobacion tarea = tareaRepositorio
-            .buscarPorIdentificadorTareaMotor(idTareaMotor)
+            .buscarPorIdentificadorTareaMotorParaActualizar(idTareaMotor)
             .orElse(null);
         if (tarea == null) {
             log.info(
@@ -63,9 +84,10 @@ public class ServicioReasignacionTarea {
         if (tarea.getAsignado() != null) {
             return false;
         }
-        if (!esRevisionActual(tarea)) {
+        if (!esRevisionActual(tarea)
+            || tarea.getRevision().getEstado() != EstadoRevision.PENDIENTE_APROBACION) {
             log.info(
-                "No se reasigna la tarea {}: la revisión ya no es la actual",
+                "No se reasigna la tarea {}: la revisión ya no está pendiente de aprobación",
                 idTareaMotor
             );
             return false;
