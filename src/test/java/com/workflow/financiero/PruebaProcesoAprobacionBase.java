@@ -1,5 +1,6 @@
 package com.workflow.financiero;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -13,8 +14,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.flowable.engine.HistoryService;
+import org.flowable.engine.ManagementService;
 import org.flowable.engine.RuntimeService;
 import org.flowable.engine.TaskService;
+import org.flowable.job.api.Job;
 import org.flowable.task.api.Task;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,6 +45,7 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
 
     static final String RUTA_SOLICITUDES = "/api/v1/solicitudes";
     static final String RUTA_TAREAS = "/api/v1/tareas-aprobacion";
+    static final String RUTA_NOTIFICACIONES = "/api/v1/notificaciones";
     static final String RUTA_LOGIN =
         "/api/v1/autenticacion/iniciar-sesion";
     static final String CLAVE_PROCESO = "aprobacionFinanciera";
@@ -70,6 +74,9 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
 
     @Autowired
     HistoryService historyService;
+
+    @Autowired
+    ManagementService managementService;
 
     @Autowired
     AdaptadorEjecucionControlada adaptadorEjecucion;
@@ -173,6 +180,14 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
         return objectMapper.readTree(resultado.getResponse().getContentAsString());
     }
 
+    JsonNode notificaciones(String usuario) throws Exception {
+        MvcResult resultado = mockMvc.perform(conToken(
+                get(RUTA_NOTIFICACIONES), token(usuario)))
+            .andExpect(status().isOk())
+            .andReturn();
+        return leer(resultado);
+    }
+
     MockHttpServletRequestBuilder conToken(
         MockHttpServletRequestBuilder peticion,
         String token
@@ -200,6 +215,14 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
             String.class,
             UUID.fromString(solicitudId),
             rol);
+    }
+
+    UUID idUsuario(String usuario) {
+        return jdbcTemplate.queryForObject(
+            "SELECT usua_id FROM usuario WHERE usua_usuario = ?",
+            UUID.class,
+            usuario
+        );
     }
 
     String idTareaAprobacionDeRevision(String revisionId, String rol) {
@@ -352,6 +375,24 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
         String revisionId
     ) {
         return adaptadorEjecucion.observaciones(UUID.fromString(revisionId));
+    }
+
+    Job buscarTimer(String procesoId, String actividad) {
+        return managementService.createTimerJobQuery()
+            .processInstanceId(procesoId)
+            .elementId(actividad)
+            .singleResult();
+    }
+
+    void ejecutarTimer(String procesoId, String actividad) {
+        Job timer = buscarTimer(procesoId, actividad);
+        if (timer == null) {
+            throw new IllegalStateException(
+                "No existe el timer " + actividad + " del proceso " + procesoId);
+        }
+        Job ejecutable = managementService.moveTimerToExecutableJob(
+            timer.getId());
+        managementService.executeJob(ejecutable.getId());
     }
 
     void enviarRiesgoExterno(
