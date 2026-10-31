@@ -172,9 +172,26 @@ interpreta como ausencia de efecto. Un `409` sigue siendo un conflicto definitiv
 y no se reintenta automáticamente.
 
 El simulador permite forzar fallos controlados en `pruebas`: error antes del
-efecto, error definitivo, conflicto de idempotencia, respuesta perdida y consulta
-no disponible. El control exige la cabecera `X-Clave-Integracion` y solo existe
-en ese perfil.
+efecto, error definitivo, conflicto de idempotencia, respuesta perdida, consulta
+no disponible y liberación fallida. El control exige la cabecera
+`X-Clave-Integracion` y solo existe en ese perfil.
+
+## Compensación
+
+La cancelación usa la acción `LIBERACION` con la clave estable
+`liberacion:{solicitudId}:{revisionId}` y la huella calculada para esa acción.
+La aplicación consulta primero la reserva:
+
+- si no existe, no hay efecto que compensar;
+- si está `RESERVADA`, llama a `liberar`;
+- si está `LIBERADA`, reutiliza el resultado idempotente;
+- si está `CONFIRMADA`, la ejecución es irreversible y no se libera.
+
+La liberación solo se considera confirmada cuando el proveedor devuelve
+`LIBERADA`, la clave y la huella coinciden y la referencia queda registrada. Si
+la liberación falla o su respuesta se pierde, la revisión queda `COMPENSANDO` y
+la recuperación se completa en la siguiente iteración. No se declara `CANCELADA`
+antes de esa confirmación.
 
 ## Configuración
 

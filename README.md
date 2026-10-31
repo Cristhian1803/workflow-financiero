@@ -170,6 +170,7 @@ La creación requiere el rol `SOLICITANTE` e inicia el proceso BPMN. Si el plan 
 | Método | Ruta | Autorización |
 |---|---|---|
 | `POST` | `/api/v1/solicitudes` | `SOLICITANTE` |
+| `POST` | `/api/v1/solicitudes/{id}/cancelar` | Dueño o `ADMINISTRADOR` |
 | `POST` | `/api/v1/solicitudes/{id}/reenvios` | Dueño |
 | `GET` | `/api/v1/solicitudes/{id}` | Dueño, aprobador relacionado o administrador |
 | `GET` | `/api/v1/solicitudes` | Dueño o administrador |
@@ -385,7 +386,34 @@ POST /api/v1/incidentes/{id}/reintentar
 
 El reintento exige `OPERACIONES` o `ADMINISTRADOR`, revalida la autorización y la revisión actual, conserva la clave y la huella, registra actor y motivo y no crea una segunda intención. Responde `200` si resuelve, `202` si el resultado sigue incierto y `409` si el incidente no admite un reintento seguro.
 
-Limitaciones de esta etapa: no se implementaron todavía la cancelación, la compensación ni el riesgo externo real. `REVISION_MANUAL` queda reservado para la revisión manual de riesgo de una etapa posterior.
+## Cancelación y compensación
+
+Solo el dueño o un `ADMINISTRADOR` pueden cancelar. El endpoint es:
+
+```text
+POST /api/v1/solicitudes/{id}/cancelar
+```
+
+El cuerpo solo acepta `motivo`. La respuesta es `200` si la revisión queda `CANCELADA`, `202` si la compensación sigue pendiente y `409 CANCELACION_NO_PERMITIDA` si la ejecución ya es irreversible o la transición no es válida.
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://localhost:8080/api/v1/solicitudes/$($creacion.id)/cancelar" `
+  -Headers @{ Authorization = "Bearer $($respuesta.token)" } `
+  -ContentType "application/json" `
+  -Body '{"motivo":"El solicitante desiste de la operacion"}'
+```
+
+- Sin reserva: se cancelan las tareas pendientes, la revisión pasa a `CANCELADA` y el proceso termina por el subproceso de cancelación.
+- Con reserva y confirmación no despachada: la revisión pasa por `COMPENSANDO`, se libera la reserva con la clave estable `liberacion:{solicitudId}:{revisionId}` y solo después de la liberación confirmada pasa a `CANCELADA`.
+- Después de una confirmación efectiva: se rechaza con `409`; no se libera nada y la revisión conserva `EJECUTADA`.
+- Si la confirmación está en tránsito o su resultado es desconocido, esta etapa no declara la cancelación: responde `409` y el caso queda para la reconciliación de la siguiente iteración.
+- Si la liberación falla o no se confirma, la revisión queda `COMPENSANDO` y la respuesta es `202`. La recuperación de ese caso corresponde a la siguiente iteración.
+
+La tabla `intento_ejecucion` conserva el motivo, el actor, la fecha de solicitud y la referencia de liberación. La confirmación efectiva del proveedor es el punto irreversible: nunca se declara `CANCELADA` antes de liberar una reserva.
+
+Limitaciones de esta etapa: la compensación incierta, la liberación fallida con reintentos y la carrera contra el despacho se completan en la siguiente iteración. El riesgo externo real y `REVISION_MANUAL` quedan para etapas posteriores.
 
 ### Reenvío
 

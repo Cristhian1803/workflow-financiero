@@ -41,6 +41,10 @@ Cada rama tiene su propia variable de decisión: `decisionSupervisor`, `decision
     - `CONFIRMADA` pasa por `marcarEjecutada` y termina en `finProceso`;
     - el flujo por defecto pasa por `marcarResultadoDesconocido` y termina en
       `finResultadoDesconocido`.
+11. La cancelación se solicita por API. La aplicación cancela las tareas, registra el
+    evento y, si corresponde, libera la reserva antes de enviar
+    `CANCELACION_SOLICITADA`. El subproceso de eventos interrumpe tareas, timers y el
+    flujo principal y termina en `finCancelacion`.
 
 La espera externa se ubica después de la unión para que las tareas puedan abrirse y
 resolverse sin depender del proveedor. La integración real, los duplicados y los eventos
@@ -57,6 +61,24 @@ consulta confirma, el mensaje enviado es `CONFIRMADA` y el proceso termina en
 `finProceso`. Si no se puede resolver, el proceso termina en `finResultadoDesconocido` y
 el incidente queda abierto para el reintento operativo. La recuperación posterior puede
 actualizar la revisión a `EJECUTADA` directamente si el proceso ya terminó.
+
+## Cancelación
+
+El proceso tiene un subproceso de eventos interrumpible `subprocesoCancelacion` con el
+mensaje `CANCELACION_SOLICITADA`. La aplicación registra la cancelación y, si hay una
+reserva no confirmada, la libera antes de enviar el mensaje. Así el cierre del alcance
+BPMN no destruye la compensación: la compensación se orquesta en la aplicación y el
+subproceso solo detiene el flujo.
+
+- Si el proceso está activo y espera el mensaje, el subproceso interrumpe las tareas
+  humanas y los timers y termina en `finCancelacion`.
+- Si el proceso es de una versión anterior sin esa suscripción, el adaptador elimina la
+  instancia con un motivo controlado.
+- Si el proceso ya terminó, la cancelación no vuelve a intervenir en el motor.
+
+La cancelación no se declara antes de liberar la reserva. Si la liberación falla o el
+resultado es incierto, la revisión queda `COMPENSANDO` y la recuperación se completa en
+la siguiente iteración.
 
 Cada tarea humana tiene dos temporizadores de frontera no interruptores:
 
@@ -120,5 +142,5 @@ las ramas restantes. El reenvío no modifica el BPMN: crea una revisión y una i
 conserva la anterior con su historial. El temporizador de 24 horas crea una notificación
 persistida y consultable por el rol destinatario; el de 48 horas reasigna la tarea al superior
 configurado y permite resolverla por delegación. El paralelismo completo, la espera de riesgo
-externo, la ejecución idempotente simulada y el cierre por resultado desconocido están probados
-en el proceso real.
+externo, la ejecución idempotente simulada, el cierre por resultado desconocido y la
+cancelación con subproceso de eventos están probados en el proceso real.
