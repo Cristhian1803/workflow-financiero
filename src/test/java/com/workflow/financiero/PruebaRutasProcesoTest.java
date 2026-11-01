@@ -5,8 +5,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Arrays;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Comprueba que el proceso real active solo las ramas del plan para cada
@@ -158,6 +162,22 @@ class PruebaRutasProcesoTest extends PruebaProcesoAprobacionBase {
 
         assertThat(creada.get("requiereEvaluacionExterna").asBoolean()).isTrue();
         assertThat(contarIntentos(creada.get("idRevision").asText())).isZero();
+    }
+
+    @ParameterizedTest(name = "{0} mantiene la ruta esperada")
+    @MethodSource("bordesInferiores")
+    @DisplayName("Los bordes inferiores de monto mantienen la ruta")
+    void bordesInferioresMantienenLaRuta(long monto, String[] roles)
+        throws Exception {
+        verificarRuta(monto, "NORMAL", roles);
+    }
+
+    static Stream<Arguments> bordesInferiores() {
+        return Stream.of(
+            Arguments.of(9_999_999L, new String[] {}),
+            Arguments.of(49_999_999L, new String[] {"SUPERVISOR"}),
+            Arguments.of(199_999_999L, new String[] {"SUPERVISOR", "GERENTE"})
+        );
     }
 
     private String claveTarea(String rol) {

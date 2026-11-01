@@ -25,8 +25,8 @@ public class ConfiguracionOpenApi {
                 .version("v1")
                 .description("Backend de operaciones financieras con BPMN. "
                     + "La creación de solicitudes inicia el proceso y deja la "
-                    + "revisión en APROBADA o PENDIENTE_APROBACION según el "
-                    + "plan de aprobación."))
+                    + "revisión en PENDIENTE_APROBACION si requiere "
+                    + "aprobaciones o en EJECUTANDO si no las requiere."))
             .components(new Components().addSecuritySchemes(
                 ESQUEMA_BEARER,
                 new SecurityScheme()

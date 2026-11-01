@@ -51,6 +51,99 @@ Cada rama tiene su propia variable de decisión: `decisionSupervisor`, `decision
     `CANCELACION_SOLICITADA`. El subproceso de eventos interrumpe tareas, timers y el
     flujo principal y termina en `finCancelacion`.
 
+## Actividades del proceso
+
+| Actividad | Dónde se implementa |
+|---|---|
+| Registrar solicitud | `POST /api/v1/solicitudes` y `ServicioRegistroSolicitud`; la instancia se inicia en `inicioSolicitud`. |
+| Validar información obligatoria | `ServicioValidacionSolicitud` con `ValidadorSolicitudCompuesto`; el proceso verifica la información persistida en `verificarSolicitud`. |
+| Determinar nivel de riesgo | `ServicioClasificacionRiesgo` y `ClasificadorRiesgoInterno`; el proceso comprueba el nivel en `verificarRiesgo`. |
+| Seleccionar la ruta de aprobación | `CalculadoraPlanAprobacion`; las compuertas `decidirAprobaciones` y `ramasAprobacion` activan solo las ramas necesarias. |
+| Ejecutar las aprobaciones | Tareas `tareaSupervisor`, `tareaGerente` y `tareaRiesgos`, con `ServicioDecisionAprobacion`. |
+| Verificar las condiciones de autorización | `verificarAutorizacion` y `VerificadorAutorizacionEjecucion`. |
+| Ejecutar la operación | `prepararEjecucion`, `ServicioIntencionEjecucion` y `TrabajadorEjecucion`. El proceso espera `EJECUCION_FINALIZADA`. |
+| Registrar el resultado | `marcarEjecutada` o `marcarResultadoDesconocido`, con el estado durable de `intento_ejecucion`. |
+| Finalizar el proceso | `finProceso`, `finResultadoDesconocido`, `finRechazo` y `finCancelacion`. |
+
+## Inventario del proceso
+
+### Tareas humanas
+
+| Nodo | Nombre | Grupos candidatos |
+|---|---|---|
+| `tareaSupervisor` | Aprobación de Supervisor | `SUPERVISOR` |
+| `tareaGerente` | Aprobación de Gerente | `GERENTE` |
+| `tareaRiesgos` | Aprobación de Riesgos | `RIESGOS` |
+| `tareaRevisionRiesgoManual` | Revisión manual de riesgo | `ANALISTA_RIESGOS`, `JEFE_RIESGOS` |
+
+Cada tarea de aprobación tiene dos temporizadores de frontera no interruptores:
+notificación a las 24 horas y reasignación a las 48 horas. La revisión manual se
+abre cuando vence la espera del riesgo externo y su resolución no crea
+aprobaciones.
+
+### Tareas automáticas
+
+| Nodo | Delegado | Propósito |
+|---|---|---|
+| `verificarSolicitud` | `delegadoVerificarSolicitud` | Comprueba la solicitud y la revisión persistidas. |
+| `verificarRiesgo` | `delegadoVerificarRiesgo` | Exige el riesgo clasificado. |
+| `verificarPlan` | `delegadoVerificarPlan` | Compara el plan recibido con el calculado. |
+| `marcarPendienteAprobacion` | `delegadoMarcarPendienteAprobacion` | Deja la revisión en `PENDIENTE_APROBACION`. |
+| `verificarAutorizacion` | `delegadoVerificarAutorizacion` | Comprueba que todas las aprobaciones requeridas estén resueltas. |
+| `prepararRevisionManual` | `delegadoPrepararRevisionManual` | Marca la evaluación vencida y prepara la tarea manual. |
+| `verificarRiesgoExterno` | `delegadoVerificarRiesgoExterno` | Lee la evaluación persistida y valida el evento aplicado. |
+| `marcarAprobada` | `delegadoMarcarAprobada` | Transiciona la revisión a `APROBADA`. |
+| `prepararEjecucion` | `delegadoPrepararEjecucion` | Persiste la intención durable y deja la revisión en `EJECUTANDO`. |
+| `marcarEjecutada` | `delegadoMarcarEjecutada` | Registra el resultado confirmado. |
+| `marcarResultadoDesconocido` | `delegadoMarcarResultadoDesconocido` | Registra el resultado incierto y el incidente. |
+| `registrarRechazo` | `delegadoRegistrarRechazo` | Cancela las tareas y cierra la revisión como `RECHAZADA`. |
+| `notificarSupervisor`, `notificarGerente`, `notificarRiesgos` | `delegadoNotificarEscalamiento` | Crean la notificación de las 24 horas. |
+| `reasignarSupervisor`, `reasignarGerente`, `reasignarRiesgos` | `delegadoReasignarTarea` | Reasignan la tarea al superior a las 48 horas. |
+
+### Compuertas y eventos
+
+| Nodo | Tipo | Función |
+|---|---|---|
+| `decidirAprobaciones` | Exclusiva | Decide si el plan requiere aprobaciones. |
+| `ramasAprobacion` | Inclusiva | Activa las ramas de Supervisor, Gerente y Riesgos. |
+| `decidirSupervisor`, `decidirGerente`, `decidirRiesgos` | Exclusivas | Separan aprobación y rechazo de cada rama. |
+| `unionAprobaciones` | Inclusiva | Espera todas las ramas activas. |
+| `decidirRiesgoExterno` | Exclusiva | Decide si hace falta evaluación externa. |
+| `esperarEventoRiesgoExterno` | Basada en eventos | Compite entre `RIESGO_EVALUADO` y el vencimiento. |
+| `decidirRevisionManual` | Exclusiva | Decide si la revisión manual puede continuar o cerrar. |
+| `decidirResultadoEjecucion` | Exclusiva | Distingue resultado confirmado y desconocido. |
+| `inicioSolicitud` | Inicio | Primer nodo del proceso. |
+| `finProceso` | Fin | Ejecución confirmada. |
+| `finResultadoDesconocido` | Fin | Ejecución con resultado incierto. |
+| `finRechazo` | Fin | Rechazo con `terminateAll`. |
+| `finCancelacion` | Fin | Cierre del subproceso de cancelación. |
+| `subprocesoCancelacion` | Subproceso de eventos | Escucha `CANCELACION_SOLICITADA` e interrumpe el alcance. |
+
+### Eventos y temporizadores
+
+| Nodo | Tipo | Función |
+|---|---|---|
+| `esperarRiesgoExterno` | Evento intermedio de mensaje | Espera `RIESGO_EVALUADO` con el resultado externo. |
+| `vencerRiesgoExterno` | Evento intermedio de temporizador | Vence la espera y abre la revisión manual. |
+| `esperarResultadoEjecucion` | Evento intermedio de mensaje | Espera `EJECUCION_FINALIZADA` del trabajador. |
+| `notificarSupervisor24h`, `notificarGerente24h`, `notificarRiesgos24h` | Temporizadores de frontera no interruptores | Crean la notificación de escalamiento. |
+| `reasignarSupervisor48h`, `reasignarGerente48h`, `reasignarRiesgos48h` | Temporizadores de frontera no interruptores | Reasignan la tarea al superior. |
+| `inicioCancelacion` | Evento de inicio | Inicio del subproceso de cancelación. |
+
+Los temporizadores usan variables ISO-8601 (`duracionNotificacion`,
+`duracionReasignacion` y `duracionRiesgoExterno`); no están fijados en el XML.
+
+## Comportamiento ante rechazo, cancelación, vencimiento y fallo
+
+| Situación | Comportamiento |
+|---|---|
+| Rechazo | `registrarRechazo` cancela las tareas pendientes, marca la revisión `RECHAZADA` y termina la instancia con `terminateAll`. |
+| Cancelación | La aplicación libera la reserva antes de enviar `CANCELACION_SOLICITADA`. El subproceso interrumpe tareas y timers. |
+| Vencimiento del riesgo externo | La evaluación queda `VENCIDA`, la revisión pasa a `REVISION_MANUAL` y se abre `tareaRevisionRiesgoManual`. |
+| Resultado desconocido | Se persiste `RESULTADO_DESCONOCIDO`, se crea un incidente y el proceso termina en `finResultadoDesconocido`. |
+| Fallo del proveedor | El trabajador reintenta con la misma clave. Si se agota, el incidente queda para reintento operativo. |
+| Fallo de compensación | La revisión queda `COMPENSANDO`, el proceso sigue activo y el trabajador reintenta o abre un incidente. |
+
 La espera externa se ubica después de la unión para que las tareas puedan abrirse y
 resolverse sin depender del proveedor. La integración simulada, los duplicados, los
 conflictos, los eventos tempranos, el vencimiento y la revisión manual están implementados.
@@ -139,6 +232,13 @@ En otros sistemas, el separador entre el XML y las salidas puede ser `:` según 
 La copia de `docs/bpmn` se compara con el modelo desplegado mediante el parseo del XML, no
 por bytes. La prueba también verifica que todos los nodos y flujos tengan información
 gráfica y que los diagramas existan y no estén vacíos.
+
+| Comprobación | Resultado esperado |
+|---|---|
+| Copia de `docs/bpmn` contra `src/main/resources/processes` | Mismo modelo al parsear el XML. |
+| Información gráfica de nodos y flujos | Presente en todos los elementos. |
+| Diagramas PNG y SVG | Existen y tienen contenido. |
+| Despliegue del proceso | `aprobacionFinanciera` se inicia y avanza con Flowable real. |
 
 ```powershell
 .\mvnw.cmd "-Dtest=PruebaProcesoPrincipalTest" test

@@ -54,7 +54,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * API de solicitudes. La creación inicia el proceso BPMN y deja la revisión en
- * APROBADA o PENDIENTE_APROBACION según el plan calculado.
+ * PENDIENTE_APROBACION si requiere aprobaciones o en EJECUTANDO si no las
+ * requiere.
  */
 @RestController
 @RequestMapping("/api/v1/solicitudes")
@@ -72,8 +73,8 @@ public class ControladorSolicitudFinanciera {
     @Operation(
         summary = "Crear una solicitud",
         description = "Valida, clasifica el riesgo, calcula el plan e inicia el "
-            + "proceso. La revisión queda en APROBADA si no requiere "
-            + "aprobaciones o en PENDIENTE_APROBACION si las requiere."
+            + "proceso. La revisión queda en PENDIENTE_APROBACION si "
+            + "requiere aprobaciones o en EJECUTANDO si no las requiere."
     )
     @ApiResponses({
         @ApiResponse(responseCode = "201", description = "Solicitud creada"),

@@ -50,7 +50,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
     "flowable.async-executor-activate=false",
     "spring.profiles.active=pruebas",
     "ejecucion.trabajador.max-intentos=3",
-    "ejecucion.trabajador.reclamacion-vencida=PT0S",
+    "ejecucion.trabajador.reclamacion-vencida=PT30S",
     "ejecucion.trabajador.reintento-espera=PT0S"
 })
 @AutoConfigureMockMvc
