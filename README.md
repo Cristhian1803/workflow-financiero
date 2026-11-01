@@ -136,15 +136,20 @@ Para mostrar tiempos acelerados se usa el perfil `pruebas` con overrides:
 
 ```powershell
 $env:SPRING_PROFILES_ACTIVE="pruebas"
+$env:FLOWABLE_ASYNC_EXECUTOR_ACTIVATE="true"
 $env:EJECUCION_TRABAJADOR_HABILITADO="true"
+$env:EJECUCION_TRABAJADOR_INTERVALO_MS="500"
 $env:APROBACION_DURACION_NOTIFICACION="PT10S"
 $env:APROBACION_DURACION_REASIGNACION="PT20S"
 $env:RIESGO_EXTERNO_VENCIMIENTO="PT15S"
 .\mvnw.cmd spring-boot:run
 ```
 
-Los valores por defecto de producción siguen siendo `PT24H` y `PT48H`. Los
-tiempos acelerados son solo para la demostración.
+El ejecutor asíncrono debe estar activo para que avancen los temporizadores de
+notificación, reasignación y riesgo externo. Los valores por defecto de
+producción siguen siendo `PT24H` y `PT48H`; los tiempos acelerados son solo para
+la demostración. Los recorridos completos están en
+[`docs/escenarios.md`](docs/escenarios.md).
 
 ## Documentación
 
