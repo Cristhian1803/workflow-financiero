@@ -155,6 +155,7 @@ tiempos acelerados son solo para la demostración.
 | [`docs/arquitectura.md`](docs/arquitectura.md) | Capas, transacción, componentes y estados. |
 | [`docs/bpmn/README.md`](docs/bpmn/README.md) | Proceso, tareas, compuertas y temporizadores. |
 | [`docs/base-de-datos.md`](docs/base-de-datos.md) | Migraciones, catálogos y restricciones. |
+| [`docs/escenarios.md`](docs/escenarios.md) | Recorridos de negocio, datos demo y limpieza. |
 | [`docs/patrones.md`](docs/patrones.md) | Patrones aplicados y descartados. |
 | [`docs/decisiones/README.md`](docs/decisiones/README.md) | Decisiones de arquitectura. |
 | [`docs/pruebas.md`](docs/pruebas.md) | Pruebas automatizadas y evidencia. |

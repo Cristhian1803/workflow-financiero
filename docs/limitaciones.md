@@ -146,10 +146,10 @@ convención y revisión.
 
 ### Las pruebas manuales no forman parte de la suite
 
-Las verificaciones con base local y las pruebas de extremo a extremo se ejecutan
-a mano y quedan registradas en [`docs/pruebas.md`](pruebas.md). Las limitaciones
-propias de la suite (Docker, Testcontainers, adaptadores de prueba) están en ese
-mismo documento.
+Las verificaciones con base local se ejecutan a mano. Los recorridos están en
+[`docs/escenarios.md`](escenarios.md) y la evidencia de las pruebas manuales en
+[`docs/pruebas.md`](pruebas.md). Las limitaciones propias de la suite (Docker,
+Testcontainers, adaptadores de prueba) están en ese mismo documento.
 
 - **Motivo:** requieren una base local y tiempos controlados.
 - **Siguiente paso:** convertir los escenarios principales en pruebas
