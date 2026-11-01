@@ -32,8 +32,8 @@ generado en `/v3/api-docs`.
 | `TAREA_YA_RESUELTA` | 409 | La tarea de aprobación ya fue resuelta. |
 | `REVISION_RIESGO_YA_RESUELTA` | 409 | La revisión manual ya fue resuelta o no corresponde. |
 | `TRANSICION_TAREA_INVALIDA` | 409 | La tarea no admite la transición solicitada. |
-| `APROBACION_NO_PERMITIDA` | 403 | El actor no puede aprobar esa tarea. |
-| `SEGREGACION_FUNCIONES` | 403 | El actor intenta aprobar dos roles distintos o su propia solicitud. |
+| `APROBACION_NO_PERMITIDA` | 403 | El actor no puede aprobar esa tarea: rol insuficiente o es el creador. |
+| `SEGREGACION_FUNCIONES` | 403 | El actor intenta aprobar dos roles funcionales distintos en la misma solicitud. |
 | `CONFLICTO_DATOS` | 409 | Conflicto de idempotencia o de estado. |
 | `INCIDENTE_NO_ENCONTRADO` | 404 | El incidente no existe o no es visible. |
 | `REINTENTO_NO_PERMITIDO` | 409 | El incidente no admite reintento. |

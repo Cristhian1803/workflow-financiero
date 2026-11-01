@@ -467,7 +467,8 @@ Invoke-RestMethod -Method Post `
 
 **Resultado esperado:** la confirmación se aplicó una sola vez; el trabajador
 recibió un error y la recuperación consultó la misma clave. El intento queda
-`CONFIRMADA`, hay una sola confirmación y no se abre un incidente.
+`CONFIRMADA`, hay una sola confirmación y el incidente de ejecución que se abre
+al recibir el error queda `RESUELTO` al confirmarse el resultado.
 
 ### Incidente y reintento
 
@@ -622,7 +623,7 @@ ON CONFLICT (usurol_usua_id, usurol_rol_codigo) DO NOTHING;
 3. Crear una solicitud de 25M. La tarea de `SUPERVISOR` existe, pero `demo` no la
    ve en su bandeja porque es el creador.
 4. Obtener el identificador de la tarea con `supervisor` e intentar aprobarla con
-   el token de `demo`. Respuesta `403 SEGREGACION_FUNCIONES`.
+   el token de `demo`. Respuesta `403 APROBACION_NO_PERMITIDA`.
 5. Retirar el rol temporal:
 
 ```sql
