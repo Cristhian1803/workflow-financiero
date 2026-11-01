@@ -1,28 +1,27 @@
 # workflow-financiero
 
-Backend de operaciones financieras con BPMN. El código Java vive en el paquete raíz `com.workflow.financiero`.
+Backend de operaciones financieras con BPMN. Una solicitud se registra, se
+clasifica por riesgo, recorre las aprobaciones que correspondan, se ejecuta
+contra un proveedor financiero simulado y puede cancelarse con compensación. El
+proceso corre en Flowable 7.2.0 embebido, comparte transacción con JPA y usa
+PostgreSQL 16.
 
 ## Requisitos
 
-- JDK 21 con `JAVA_HOME` configurado.
-- Docker Desktop con WSL2 en Windows, o Docker Engine + Docker Compose en Linux/macOS.
+- JDK 21 con `JAVA_HOME`.
+- Docker Desktop iniciado.
 - Git.
-- **No se necesita Maven global**: el proyecto incluye Maven Wrapper.
+- No se necesita Maven global: el repositorio incluye Maven Wrapper.
 
-## Base de datos
+## Inicio rápido en Windows
 
-> Antes de ejecutar `docker compose` o las pruebas, verificar que Docker Desktop
-> esté iniciado. Si se reinicia Windows, abrir Docker Desktop y esperar el motor.
-
-Crear el archivo de variables locales:
+1. Crear el archivo de variables locales:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Compose usa `POSTGRES_*`; Spring usa `DB_URL`, `DB_USER`, `DB_PASSWORD` y las variables JWT.
-
-Generar un secreto JWT de al menos 32 bytes y copiarlo en `.env`:
+2. Generar un `JWT_SECRETO` de al menos 32 bytes y copiarlo en `.env`:
 
 ```powershell
 $bytes = New-Object byte[] 48
@@ -30,574 +29,162 @@ $bytes = New-Object byte[] 48
 [Convert]::ToBase64String($bytes)
 ```
 
-`JWT_SECRETO` no tiene valor por defecto versionado. Si falta o es demasiado corto, la aplicación no arranca.
+3. Completar en `.env` los secretos de los simuladores. No pueden quedar vacíos
+   para que el flujo completo funcione:
 
-Levantar PostgreSQL 16:
+```text
+PROVEEDOR_FINANCIERO_SECRETO=<valor no vacío>
+RIESGO_EXTERNO_SECRETO=<valor no vacío>
+```
+
+4. Levantar PostgreSQL:
 
 ```powershell
 docker compose up -d postgres
 docker compose ps
 ```
 
-## Compilar y probar
-
-Windows:
-
-```powershell
-.\mvnw.cmd clean verify
-```
-
-Linux/macOS:
-
-```bash
-chmod +x mvnw   # solo si el archivo no tiene permiso de ejecucion
-./mvnw clean verify
-```
-
-Las pruebas de integración usan Testcontainers y generan un secreto JWT aleatorio por ejecución; no necesitan el `.env`.
-
-## Ejecutar la aplicación
-
-Perfil `desarrollo`:
+5. Arrancar la aplicación con el perfil de desarrollo:
 
 ```powershell
 $env:SPRING_PROFILES_ACTIVE="desarrollo"
 .\mvnw.cmd spring-boot:run
 ```
 
-La aplicación lee `.env` automáticamente. Como alternativa se pueden definir los secretos en la sesión:
+6. Abrir `http://localhost:8080/swagger-ui.html` y consultar la salud en
+   `http://localhost:8080/actuator/health`.
 
-```powershell
-$env:JWT_SECRETO="<secreto de al menos 32 bytes>"
-$env:PROVEEDOR_FINANCIERO_SECRETO="<secreto de integración>"
-$env:RIESGO_EXTERNO_SECRETO="<secreto de la firma de riesgo>"
-```
+## Usuarios demo
 
-El trabajador de ejecución se activa en `desarrollo`. Se puede desactivar para inspeccionar una intención pendiente:
+Solo existen en los perfiles `desarrollo` y `pruebas`. La clave es el valor de
+`DEMO_CLAVE`, por defecto `demo`.
 
-```powershell
-$env:EJECUCION_TRABAJADOR_HABILITADO="false"
-```
-
-Parámetros de recuperación:
-
-```powershell
-$env:EJECUCION_TRABAJADOR_MAX_INTENTOS="3"
-$env:EJECUCION_TRABAJADOR_RECLAMACION_VENCIDA="PT30S"
-$env:EJECUCION_TRABAJADOR_REINTENTO_ESPERA="PT5S"
-$env:RIESGO_EXTERNO_VENTANA_TIEMPO="PT5M"
-$env:RIESGO_EXTERNO_VENCIMIENTO="PT24H"
-$env:RIESGO_EXTERNO_REINTENTO="PT5S"
-$env:RIESGO_EXTERNO_MAXIMO_INTENTOS="3"
-```
-
-El sembrador de usuarios demo corre al final del arranque. Si el primer login devuelve `401`, esperar un instante y reintentar.
-
-Punto de salud:
-
-```text
-GET http://localhost:8080/actuator/health
-```
-
-## Autenticación
-
-La API usa JWT firmado.
-
-### Usuarios demo
-
-Solo se crean en `desarrollo` y `pruebas`:
-
-| Usuario | Clave por defecto | Roles | Perfil | Uso |
-|---|---|---|---|---|
-| `demo` | `demo` | `SOLICITANTE` | `NORMAL` | Solicitante |
-| `demo2` | `demo` | `SOLICITANTE` | `NORMAL` | Solicitante alternativo |
-| `auditor` | `demo` | `AUDITOR` | `NORMAL` | Auditoría |
-| `admin` | `demo` | `ADMINISTRADOR` | `NORMAL` | Administración |
-| `supervisor` | `demo` | `SUPERVISOR` | `NORMAL` | Aprobador |
-| `gerente` | `demo` | `GERENTE` | `NORMAL` | Aprobador y superior de Supervisor |
-| `riesgos` | `demo` | `RIESGOS` | `NORMAL` | Aprobador |
-| `gerente_general` | `demo` | `GERENTE_GENERAL` | `NORMAL` | Delegado de Gerente |
-| `jefe_riesgos` | `demo` | `JEFE_RIESGOS` | `NORMAL` | Delegado de Riesgos y revisor manual |
-| `analista_riesgos` | `demo` | `ANALISTA_RIESGOS` | `NORMAL` | Revisor manual de riesgo |
-| `operaciones` | `demo` | `OPERACIONES` | `NORMAL` | Consulta operativa |
-
-La clave se puede cambiar con `DEMO_CLAVE`. El sembrador es idempotente: no duplica usuarios ni sobrescribe claves existentes.
-
-### Iniciar sesión
-
-```powershell
-$respuesta = Invoke-RestMethod `
-  -Method Post `
-  -Uri http://localhost:8080/api/v1/autenticacion/iniciar-sesion `
-  -ContentType "application/json" `
-  -Body '{"usuario":"demo","clave":"demo"}'
-
-$respuesta.token
-```
-
-Respuesta:
-
-```json
-{
-  "token": "...",
-  "tipo": "Bearer",
-  "expiraEn": "2026-10-29T20:00:00Z"
-}
-```
-
-### Usuario actual
-
-```powershell
-Invoke-RestMethod `
-  -Uri http://localhost:8080/api/v1/autenticacion/yo `
-  -Headers @{ Authorization = "Bearer $($respuesta.token)" }
-```
-
-Devuelve `id`, `usuario`, `nombre`, `roles` y `perfilRiesgo`; nunca devuelve el hash de la clave.
-
-### Rutas
-
-- `POST /api/v1/autenticacion/iniciar-sesion`: público.
-- `GET /api/v1/autenticacion/yo`: autenticado.
-- `/actuator/health`: público.
-- `/actuator/info`: requiere `ADMINISTRADOR`.
-- Swagger y `/v3/api-docs`: públicos en `desarrollo` y `pruebas`; fuera de esos perfiles requieren autenticación.
-
-Swagger UI en desarrollo:
-
-```text
-http://localhost:8080/swagger-ui.html
-```
-
-## API de solicitudes
-
-La creación requiere el rol `SOLICITANTE` e inicia el proceso BPMN. Si el plan no requiere aprobaciones, la revisión queda en `EJECUTANDO` y el proceso espera el resultado; si las requiere, queda en `PENDIENTE_APROBACION` y el motor abre las tareas humanas correspondientes. Cuando la última aprobación termina, la revisión pasa a `EJECUTANDO`.
-
-| Método | Ruta | Autorización |
+| Usuario | Rol | Uso |
 |---|---|---|
-| `POST` | `/api/v1/solicitudes` | `SOLICITANTE` |
-| `POST` | `/api/v1/solicitudes/{id}/cancelar` | Dueño o `ADMINISTRADOR` |
-| `POST` | `/api/v1/solicitudes/{id}/reenvios` | Dueño |
-| `GET` | `/api/v1/solicitudes/{id}` | Dueño, aprobador relacionado o administrador |
-| `GET` | `/api/v1/solicitudes` | Dueño o administrador |
-| `GET` | `/api/v1/solicitudes/{id}/historial` | Dueño, auditor o administrador |
-| `GET` | `/api/v1/solicitudes/{id}/proceso` | Dueño, aprobador relacionado o administrador |
-| `GET` | `/api/v1/tareas-aprobacion` | Aprobador o delegado |
-| `POST` | `/api/v1/tareas-aprobacion/{id}/aprobar` | Actor elegible |
-| `POST` | `/api/v1/tareas-aprobacion/{id}/rechazar` | Actor elegible |
-| `GET` | `/api/v1/tareas-revision-riesgo` | `ANALISTA_RIESGOS` o `JEFE_RIESGOS` |
-| `POST` | `/api/v1/tareas-revision-riesgo/{id}/resolver` | Revisor autorizado |
-| `GET` | `/api/v1/notificaciones` | Autenticado |
-| `GET` | `/api/v1/incidentes` | `OPERACIONES` o `ADMINISTRADOR` |
-| `POST` | `/api/v1/incidentes/{id}/reintentar` | `OPERACIONES` o `ADMINISTRADOR` |
+| `demo`, `demo2` | `SOLICITANTE` | Crear solicitudes. |
+| `supervisor` | `SUPERVISOR` | Aprobar el primer tramo. |
+| `gerente` | `GERENTE` | Aprobar montos altos. |
+| `riesgos` | `RIESGOS` | Aprobar la rama de Riesgos. |
+| `gerente_general` | `GERENTE_GENERAL` | Superior de Gerente. |
+| `jefe_riesgos` | `JEFE_RIESGOS` | Superior de Riesgos y revisor manual. |
+| `analista_riesgos` | `ANALISTA_RIESGOS` | Revisión manual de riesgo. |
+| `operaciones` | `OPERACIONES` | Consultar y reintentar incidentes. |
+| `auditor` | `AUDITOR` | Consultar historial. |
+| `admin` | `ADMINISTRADOR` | Visibilidad completa y cancelación. |
 
-### Crear
+## Flujo mínimo
 
 ```powershell
-$creacion = Invoke-RestMethod `
-  -Method Post `
+$token = (Invoke-RestMethod -Method Post `
+  -Uri http://localhost:8080/api/v1/autenticacion/iniciar-sesion `
+  -ContentType 'application/json' `
+  -Body '{"usuario":"demo","clave":"demo"}').token
+
+Invoke-RestMethod -Method Post `
   -Uri http://localhost:8080/api/v1/solicitudes `
-  -Headers @{ Authorization = "Bearer $($respuesta.token)" } `
-  -ContentType "application/json" `
-  -Body '{"tipoOperacion":"NORMAL","monto":25000000,"moneda":"PYG","descripcion":"Pago de demostracion","justificacion":"Operacion autorizada para pruebas"}'
-
-$creacion
+  -Headers @{ Authorization = "Bearer $token" } `
+  -ContentType 'application/json' `
+  -Body '{"tipoOperacion":"NORMAL","monto":25000000,"moneda":"PYG","descripcion":"Pago de servicios","justificacion":"Operación autorizada para pruebas"}'
 ```
 
-La respuesta `201` incluye `id`, `idRevision`, `revision`, `solicitante`, tipo, monto, moneda, descripción, justificación, `estado`, `nivelRiesgo`, `aprobacionesRequeridas`, `requiereEvaluacionExterna`, `fechaCreacion` y `fechaActualizacion`.
+Una solicitud de 25.000.000 PYG queda en `PENDIENTE_APROBACION` con una tarea de
+Supervisor. Una de 5.000.000 no requiere aprobaciones y el trabajador la deja en
+`EJECUTADA`. Los montos, roles y bordes están en [`docs/pruebas.md`](docs/pruebas.md).
 
-Para 5 millones el plan está vacío y la revisión queda en `EJECUTANDO`; el trabajador la lleva a `EJECUTADA` en segundo plano. Para 25 millones el riesgo es `BAJO`, el plan es `SUPERVISOR` y la revisión queda en `PENDIENTE_APROBACION`. Para 100 millones el riesgo es `MEDIO` y el plan es `GERENTE` y `SUPERVISOR`. Para 250 millones el riesgo es `ALTO`, el plan incluye `GERENTE`, `RIESGOS` y `SUPERVISOR`, y `requiereEvaluacionExterna` es `true`.
+## Perfiles
 
-### Consultar detalle
+| Perfil | Uso | Trabajador | Usuarios demo | Simuladores |
+|---|---|---|---|---|
+| `desarrollo` | Uso local y Swagger | Habilitado | Sí | Sí |
+| `pruebas` | Suite y demostración | Deshabilitado salvo override | Sí | Sí |
+| Sin perfil | Producción | Según variable | No | No |
+
+Variables principales:
+
+| Variable | Para qué |
+|---|---|
+| `JWT_SECRETO` | Firma del token; obligatoria y de al menos 32 bytes. |
+| `DEMO_CLAVE` | Clave de los usuarios demo. |
+| `PROVEEDOR_FINANCIERO_SECRETO` | Clave del simulador financiero. |
+| `RIESGO_EXTERNO_SECRETO` | Firma HMAC del riesgo externo. |
+| `EJECUCION_TRABAJADOR_HABILITADO` | Enciende el trabajador de ejecución. |
+| `APROBACION_DURACION_NOTIFICACION` | Plazo de notificación; por defecto `PT24H`. |
+| `APROBACION_DURACION_REASIGNACION` | Plazo de reasignación; por defecto `PT48H`. |
+| `RIESGO_EXTERNO_VENCIMIENTO` | Vencimiento de la evaluación externa; por defecto `PT24H`. |
+
+El detalle de cada variable está en [`.env.example`](.env.example).
+
+## Pruebas
 
 ```powershell
-Invoke-RestMethod `
-  -Uri "http://localhost:8080/api/v1/solicitudes/$($creacion.id)" `
-  -Headers @{ Authorization = "Bearer $($respuesta.token)" }
+# Suite completa; requiere Docker
+.\mvnw.cmd clean verify
+
+# Una clase dirigida
+.\mvnw.cmd "-Dtest=PruebaCancelacionCompensacionTest" test
+
+# Varias clases
+.\mvnw.cmd "-Dtest=PruebaConcurrenciaAprobacionTest,PruebaConcurrenciaCancelacionTest" test
 ```
 
-### Listar y paginar
+La suite usa PostgreSQL 16 con Testcontainers y Flowable real. Los reportes
+quedan en `target/surefire-reports/`.
+
+## Modo demostración
+
+Para mostrar tiempos acelerados se usa el perfil `pruebas` con overrides:
 
 ```powershell
-Invoke-RestMethod `
-  -Uri "http://localhost:8080/api/v1/solicitudes?pagina=0&tamano=20&estado=PENDIENTE_APROBACION" `
-  -Headers @{ Authorization = "Bearer $($respuesta.token)" }
+$env:SPRING_PROFILES_ACTIVE="pruebas"
+$env:EJECUCION_TRABAJADOR_HABILITADO="true"
+$env:APROBACION_DURACION_NOTIFICACION="PT10S"
+$env:APROBACION_DURACION_REASIGNACION="PT20S"
+$env:RIESGO_EXTERNO_VENCIMIENTO="PT15S"
+.\mvnw.cmd spring-boot:run
 ```
 
-`pagina` empieza en `0`; `tamano` admite de `1` a `100`. El administrador ve todas las solicitudes; el solicitante solo las propias.
+Los valores por defecto de producción siguen siendo `PT24H` y `PT48H`. Los
+tiempos acelerados son solo para la demostración.
 
-### Historial
+## Documentación
 
-```powershell
-Invoke-RestMethod `
-  -Uri "http://localhost:8080/api/v1/solicitudes/$($creacion.id)/historial" `
-  -Headers @{ Authorization = "Bearer $($respuesta.token)" }
-```
+| Documento | Contenido |
+|---|---|
+| [`docs/api.md`](docs/api.md) | Rutas, roles, cuerpos, respuestas y errores. |
+| [`docs/api/openapi.json`](docs/api/openapi.json) | Contrato OpenAPI generado. |
+| [`docs/arquitectura.md`](docs/arquitectura.md) | Capas, transacción, componentes y estados. |
+| [`docs/bpmn/README.md`](docs/bpmn/README.md) | Proceso, tareas, compuertas y temporizadores. |
+| [`docs/base-de-datos.md`](docs/base-de-datos.md) | Migraciones, catálogos y restricciones. |
+| [`docs/patrones.md`](docs/patrones.md) | Patrones aplicados y descartados. |
+| [`docs/decisiones/README.md`](docs/decisiones/README.md) | Decisiones de arquitectura. |
+| [`docs/pruebas.md`](docs/pruebas.md) | Pruebas automatizadas y evidencia. |
+| [`docs/tecnologias.md`](docs/tecnologias.md) | Tecnologías y alternativas. |
+| [`docs/limitaciones.md`](docs/limitaciones.md) | Alcance real y pendientes. |
 
-Devuelve eventos inmutables con actor, rol, estados, detalle, correlación y fecha.
+## Estructura del código
 
-### Proceso
+| Paquete | Responsabilidad |
+|---|---|
+| `api` | Controladores, contratos, errores y configuración de OpenAPI. |
+| `aplicacion` | Casos de uso, transacciones y puertos. |
+| `dominio` | Modelo, estados, reglas y eventos. |
+| `infraestructura` | Persistencia, BPMN, integraciones, seguridad y simuladores. |
 
-```powershell
-Invoke-RestMethod `
-  -Uri "http://localhost:8080/api/v1/solicitudes/$($creacion.id)/proceso" `
-  -Headers @{ Authorization = "Bearer $($respuesta.token)" }
-```
+El paquete raíz es `com.workflow.financiero`.
 
-La respuesta incluye `identificadorProceso`, `iniciado`, `finalizado`, `estadoRevision`, `actividadesActivas` y `tareas`. Para una instancia activa muestra las tareas humanas con su id de negocio, rol, estado, asignado y vencimiento; para una finalizada consulta el historial y devuelve las listas vacías.
+## Limitaciones
 
-Una solicitud ajena no visible responde `404`; un usuario sin el rol necesario responde `403`. El dueño, el administrador y un aprobador con tarea en la revisión actual pueden consultar el detalle y el proceso.
+El sistema no mueve dinero real, no tiene multimoneda, no incluye una interfaz
+gráfica y no migra instancias BPMN en vuelo. La lista completa, con motivo y
+siguiente paso, está en [`docs/limitaciones.md`](docs/limitaciones.md).
 
-### Tareas de aprobación
+## Solución de problemas
 
-```powershell
-$loginSupervisor = Invoke-RestMethod `
-  -Method Post `
-  -Uri http://localhost:8080/api/v1/autenticacion/iniciar-sesion `
-  -ContentType "application/json" `
-  -Body '{"usuario":"supervisor","clave":"demo"}'
-
-Invoke-RestMethod `
-  -Uri http://localhost:8080/api/v1/tareas-aprobacion `
-  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" }
-```
-
-Devuelve solo tareas `PENDIENTE` de la revisión actual visibles para el actor. Incluye las tareas asignadas y las tareas sin asignar de sus roles funcionales o delegados. El creador de la solicitud no ve sus propias tareas. Cada elemento incluye `fechaCreacion`, `fechaNotificacion` calculada con `flujo.aprobacion.notificacion` y `fechaVencimiento` guardada con `flujo.aprobacion.reasignacion`, además de los datos de la solicitud.
-
-Los plazos y superiores se configuran en `flujo.aprobacion`:
-
-```yaml
-flujo:
-  aprobacion:
-    notificacion: ${APROBACION_DURACION_NOTIFICACION:PT24H}
-    reasignacion: ${APROBACION_DURACION_REASIGNACION:PT48H}
-    superiores:
-      SUPERVISOR: GERENTE
-      GERENTE: GERENTE_GENERAL
-      RIESGOS: JEFE_RIESGOS
-```
-
-### Notificaciones
-
-Cuando una tarea de aprobación sigue pendiente al cumplirse el plazo de notificación, el proceso crea una notificación persistida para el rol funcional. La API devuelve las notificaciones dirigidas al actor o a sus roles activos, sin duplicados y ordenadas por fecha descendente.
-
-```powershell
-Invoke-RestMethod `
-  -Uri http://localhost:8080/api/v1/notificaciones `
-  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" }
-```
-
-Cada elemento incluye `id`, `tipo`, `contenido`, `estado`, `idTarea`, `idSolicitud`, `revision`, `fechaCreacion` y `fechaLectura`. En esta etapa no hay endpoint para marcar como leída ni envío de correo. Una tarea aprobada o asignada antes del vencimiento no genera la notificación de 24 horas.
-
-### Reasignación y delegación
-
-Si una tarea sigue pendiente al cumplirse el plazo de reasignación, se asigna al primer usuario activo con el rol superior configurado, ordenado por nombre de usuario. La tarea conserva su rol funcional y no se completa: solo cambia el responsable.
-
-El nuevo asignado recibe una notificación `REASIGNACION_48H` y puede resolver la tarea por delegación. La decisión conserva el rol funcional original y devuelve `delegado=true`. La bandeja muestra la tarea asignada al delegado y deja de mostrarla a los demás usuarios del rol.
-
-Si no hay un superior activo, la tarea sigue pendiente y sin asignado. Se registra el evento `REASIGNACION_FALLIDA` y se crea una notificación para el rol `ADMINISTRADOR`. El creador de la solicitud no puede aprobar aunque quede como superior asignado. La recuperación operativa de una reasignación fallida queda para una etapa posterior; la API de incidentes de ejecución ya está disponible.
-
-La notificación de 24 horas no se crea si la tarea ya fue reasignada. La aprobación antes del vencimiento tampoco genera una reasignación tardía.
-
-### Aprobar y rechazar
-
-```powershell
-$loginSupervisor = Invoke-RestMethod `
-  -Method Post `
-  -Uri http://localhost:8080/api/v1/autenticacion/iniciar-sesion `
-  -ContentType "application/json" `
-  -Body '{"usuario":"supervisor","clave":"demo"}'
-
-$tarea = (Invoke-RestMethod `
-  -Uri http://localhost:8080/api/v1/tareas-aprobacion `
-  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" })[0]
-
-Invoke-RestMethod `
-  -Method Post `
-  -Uri "http://localhost:8080/api/v1/tareas-aprobacion/$($tarea.id)/aprobar" `
-  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" } `
-  -ContentType "application/json" `
-  -Body '{"comentario":"Aprobado para continuar"}'
-```
-
-Para rechazar se usa `/rechazar` con `motivo` obligatorio:
-
-```powershell
-Invoke-RestMethod `
-  -Method Post `
-  -Uri "http://localhost:8080/api/v1/tareas-aprobacion/$($tarea.id)/rechazar" `
-  -Headers @{ Authorization = "Bearer $($loginSupervisor.token)" } `
-  -ContentType "application/json" `
-  -Body '{"motivo":"El monto no coincide con la documentación"}'
-```
-
-Ambas respuestas incluyen `idTarea`, `decision`, `fecha`, `estadoTarea`, `estadoRevision` y `delegado`. El id es el de la tarea de negocio, no el de Flowable.
-
-Reglas aplicadas:
-
-- El creador no puede aprobar su propia solicitud.
-- Un actor no puede aprobar dos roles funcionales distintos en la misma solicitud.
-- El mismo rol se puede repetir en otra revisión.
-- Si la tarea tiene asignado, solo el asignado puede resolverla y debe tener el rol funcional o la delegación.
-- El rol registrado es el rol funcional de la tarea, aunque actúe un superior por delegación.
-- Un rechazo cancela las demás tareas pendientes de la revisión y termina el proceso sin preparar ejecución.
-
-Errores principales: `400 DATOS_INVALIDOS`, `401 NO_AUTENTICADO`, `403 APROBACION_NO_PERMITIDA`, `403 SEGREGACION_FUNCIONES`, `404 TAREA_NO_ENCONTRADA`, `409 TAREA_YA_RESUELTA` y `409 TRANSICION_TAREA_INVALIDA`.
-
-### Rutas y aprobaciones paralelas
-
-El proceso activa solo las ramas del plan:
-
-| Monto | Riesgo | Ramas |
+| Síntoma | Causa probable | Solución |
 |---|---|---|
-| Hasta 10 millones | Bajo o medio | Ninguna |
-| Hasta 10 millones | Alto | `RIESGOS` |
-| Hasta 50 millones | Bajo o medio | `SUPERVISOR` |
-| Hasta 50 millones | Alto | `SUPERVISOR`, `RIESGOS` |
-| Hasta 200 millones | Bajo o medio | `SUPERVISOR`, `GERENTE` |
-| Hasta 200 millones | Alto | `SUPERVISOR`, `GERENTE`, `RIESGOS` |
-| Más de 200 millones | Alto | `SUPERVISOR`, `GERENTE`, `RIESGOS` |
-
-Gerente y Riesgos son independientes y se pueden aprobar en cualquier orden. Cuando todas las ramas activadas aprobaron, la revisión pasa a `EJECUTANDO` y se persiste la intención de ejecución. Para más de 200 millones, después de las aprobaciones el proceso espera el mensaje `RIESGO_EVALUADO` o el vencimiento configurable; si vence, abre la revisión manual descrita más abajo. No se usa un fixture para resolver esa espera.
-
-## Ejecución financiera simulada
-
-El proceso no llama al proveedor. Primero persiste `intento_ejecucion` con una clave y una huella estables; después el trabajador reclama la intención, llama al proveedor fuera de una transacción y registra el resultado en otra transacción corta.
-
-El proveedor simulado reserva y confirma con claves distintas:
-
-```text
-reserva:{solicitudId}:{revisionId}
-confirmacion:{solicitudId}:{revisionId}
-```
-
-La confirmación es el punto irreversible. Una reserva confirmada no se puede liberar. El estado observable queda en `operacion_simulada`.
-
-Si el trabajador está deshabilitado, la revisión queda en `EJECUTANDO` con la intención `PENDIENTE`. Al reiniciar con `EJECUCION_TRABAJADOR_HABILITADO=true`, el trabajador retoma la intención y el proceso termina en `EJECUTADA`.
-
-## Riesgo externo asíncrono
-
-Para montos superiores a 200 millones, la aplicación persiste una evaluación externa en `evaluacion_riesgo` con estado `PENDIENTE` y la clave estable `riesgo:{solicitudId}:{revisionId}`. Un trabajador envía la solicitud al proveedor simulado fuera de la transacción de negocio y guarda la referencia. Si el envío falla, programa un reintento limitado con la misma identidad.
-
-El proveedor notifica el resultado con:
-
-```text
-POST /api/v1/integraciones/riesgos/notificacion
-```
-
-Cabeceras:
-
-```text
-X-Proveedor
-X-Identificador-Evento
-X-Timestamp
-X-Firma
-```
-
-La firma es HMAC-SHA256 sobre el texto canónico:
-
-```text
-proveedor + "\n" +
-identificadorEvento + "\n" +
-timestamp + "\n" +
-cuerpoCrudo
-```
-
-El secreto se toma de `RIESGO_EXTERNO_SECRETO`. Si está vacío, el endpoint rechaza todas las notificaciones. `X-Timestamp` y `fechaProveedor` deben estar dentro de `RIESGO_EXTERNO_VENTANA_TIEMPO`.
-
-Cuerpo mínimo:
-
-```json
-{
-  "proveedor": "proveedor-riesgo-simulado",
-  "identificadorEvento": "evt-123",
-  "identificadorSolicitud": "6f7f8a8e-5f4a-4d1a-9e0f-1d2c3b4a5e6f",
-  "numeroRevision": 1,
-  "nivelRiesgo": "ALTO",
-  "fechaProveedor": "2026-10-31T12:00:00Z",
-  "resultado": "Evaluación externa de demostración"
-}
-```
-
-La aplicación guarda el evento en `evento_externo` antes de correlacionarlo. Si la solicitud, la revisión o la suscripción BPMN todavía no existen, el evento queda `PENDIENTE` y se reintenta sin consumir intentos fallidos. Un duplicado idéntico responde `200 DUPLICADO`; el mismo identificador con otra huella responde `409 EVENTO_EXTERNO_EN_CONFLICTO`; un evento de una revisión anterior, cancelada, en revisión manual o terminal queda `OBSOLETO`.
-
-Cuando el proceso espera `RIESGO_EVALUADO`, la aplicación consolida el máximo entre riesgo interno y externo, registra `EVALUACION_EXTERNA_RESUELTA`, marca el evento `PROCESADO` y envía el mensaje a la instancia específica. El delegate lee la evaluación persistida y no confía en variables del mensaje. El evento no crea ni modifica aprobaciones.
-
-### Vencimiento y revisión manual
-
-Después de las aprobaciones, el proceso espera el resultado externo con un gateway de eventos que compite entre el mensaje `RIESGO_EVALUADO` y un timer configurable:
-
-```text
-RIESGO_EXTERNO_VENCIMIENTO=PT24H
-```
-
-El vencimiento se mide desde que el proceso entra en la espera. Si el timer gana, la evaluación externa pendiente queda `VENCIDA`, la revisión pasa a `REVISION_MANUAL` y se crea una tarea humana. El evento externo que llegue después queda `OBSOLETO`.
-
-La tarea manual se consulta y resuelve con:
-
-```text
-GET  /api/v1/tareas-revision-riesgo
-POST /api/v1/tareas-revision-riesgo/{id}/resolver
-```
-
-Cuerpo:
-
-```json
-{
-  "nivelRiesgo": "ALTO",
-  "motivo": "El proveedor externo no respondió en el plazo",
-  "evidencia": "Consulta y registro de incidente"
-}
-```
-
-Solo `ANALISTA_RIESGOS` y `JEFE_RIESGOS` pueden listar y resolver. El creador de la solicitud no resuelve su propia revisión. La resolución registra actor, fecha, nivel, motivo y evidencia, consolida el máximo con el riesgo interno, recalcula el plan y devuelve el proceso a la espera de ejecución. No crea decisiones de aprobación ni exime de las aprobaciones existentes. Una segunda resolución responde `409 REVISION_RIESGO_YA_RESUELTA`.
-
-Si los reintentos de envío o correlación se agotan, se crea un incidente `RIESGO_EXTERNO` no reintentable. La recuperación es la revisión manual; el incidente se resuelve cuando se aplica el resultado o se cancela la solicitud.
-
-Ejemplo de firma en PowerShell:
-
-```powershell
-$proveedor = "proveedor-riesgo-simulado"
-$evento = "evt-manual-1"
-$timestamp = (Get-Date).ToUniversalTime().ToString("o")
-$cuerpo = @{
-  proveedor = $proveedor
-  identificadorEvento = $evento
-  identificadorSolicitud = $solicitudId
-  numeroRevision = 1
-  nivelRiesgo = "ALTO"
-  fechaProveedor = (Get-Date).ToUniversalTime().ToString("o")
-  resultado = "Evaluación externa manual"
-} | ConvertTo-Json -Compress
-
-$canonico = "$proveedor`n$evento`n$timestamp`n$cuerpo"
-$hmac = [System.Security.Cryptography.HMACSHA256]::new(
-  [Text.Encoding]::UTF8.GetBytes($env:RIESGO_EXTERNO_SECRETO))
-$firma = [BitConverter]::ToString(
-  $hmac.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonico))
-).Replace('-', '').ToLowerInvariant()
-
-Invoke-WebRequest -Method Post `
-  -Uri "http://localhost:8080/api/v1/integraciones/riesgos/notificacion" `
-  -Headers @{
-    "X-Proveedor" = $proveedor
-    "X-Identificador-Evento" = $evento
-    "X-Timestamp" = $timestamp
-    "X-Firma" = $firma
-  } `
-  -ContentType "application/json" `
-  -Body $cuerpo `
-  -UseBasicParsing
-```
-
-## Recuperación e incidentes
-
-Si el proveedor confirma pero la respuesta se pierde, o si hay un timeout después del despacho, la intención queda en `RESULTADO_DESCONOCIDO`. La aplicación consulta al proveedor con la misma clave y la misma huella; nunca cambia la identidad financiera ni repite la confirmación a ciegas.
-
-- Si la consulta confirma el efecto, la revisión pasa a `EJECUTADA` y el incidente se resuelve.
-- Si la consulta no está disponible, el incidente queda `ABIERTO` y se programan reintentos limitados.
-- Si se agotan los intentos, el proceso cierra en `RESULTADO_DESCONOCIDO` y el incidente queda para intervención operativa.
-- Un error definitivo se registra como `FALLIDA` en la intención y permite un reintento manual seguro.
-- Un conflicto de clave o huella no se reintenta: el incidente queda marcado como no reintentable.
-
-La tabla `incidente` guarda tipo, referencia, estado, motivo, actor, reintentos y último resultado. Los incidentes de ejecución y compensación se consultan y reintentan con:
-
-```text
-GET  /api/v1/incidentes
-POST /api/v1/incidentes/{id}/reintentar
-```
-
-Los incidentes de riesgo externo se consultan en la misma bandeja, pero no admiten reintento operativo: su recuperación es la tarea manual de riesgo.
-
-El reintento exige `OPERACIONES` o `ADMINISTRADOR`, revalida la autorización y la revisión actual, conserva la clave y la huella, registra actor y motivo y no crea una segunda intención. Responde `200` si resuelve, `202` si el resultado sigue incierto y `409` si el incidente no admite un reintento seguro.
-
-## Cancelación y compensación
-
-Solo el dueño o un `ADMINISTRADOR` pueden cancelar. El endpoint es:
-
-```text
-POST /api/v1/solicitudes/{id}/cancelar
-```
-
-El cuerpo solo acepta `motivo`. La respuesta es `200` si la revisión queda `CANCELADA`, `202` si la compensación sigue pendiente y `409 CANCELACION_NO_PERMITIDA` si la ejecución ya es irreversible o la transición no es válida.
-
-```powershell
-Invoke-RestMethod `
-  -Method Post `
-  -Uri "http://localhost:8080/api/v1/solicitudes/$($creacion.id)/cancelar" `
-  -Headers @{ Authorization = "Bearer $($respuesta.token)" } `
-  -ContentType "application/json" `
-  -Body '{"motivo":"El solicitante desiste de la operacion"}'
-```
-
-- Sin reserva ni despacho en curso: se cancelan las tareas pendientes, la revisión pasa a `CANCELADA` y el proceso termina por el subproceso de cancelación.
-- Con reserva y confirmación no despachada: la revisión pasa por `COMPENSANDO`, se libera la reserva con la clave estable `liberacion:{solicitudId}:{revisionId}` y solo después de la liberación confirmada pasa a `CANCELADA`.
-- Después de una confirmación efectiva: se rechaza con `409`; no se libera nada y la revisión conserva `EJECUTADA`.
-- Si la confirmación está en tránsito o su resultado es desconocido, no se libera ni se declara `CANCELADA`: responde `202` y la cancelación queda pendiente de reconciliación.
-- Si la liberación falla o su respuesta se pierde, se consulta o reintenta con la misma clave. Un fallo transitorio se agenda; al agotar los intentos se abre un incidente de compensación y la revisión sigue `COMPENSANDO`.
-- Un incidente de compensación se reintenta con `POST /api/v1/incidentes/{id}/reintentar` por `OPERACIONES` o `ADMINISTRADOR`. El reintento conserva clave y huella y registra actor y motivo.
-
-La tabla `intento_compensacion` conserva el estado durable de la cancelación (`PENDIENTE`, `LIBERANDO`, `LIBERADA`, `CANCELADA`, `RECHAZADA`, `FALLIDA`, `REVISION_MANUAL`), el actor, el motivo, los intentos, la próxima ejecución y la referencia de liberación. La tabla `intento_ejecucion` conserva el resumen financiero. La confirmación efectiva del proveedor es el punto irreversible: nunca se declara `CANCELADA` antes de liberar una reserva.
-
-La carrera contra el despacho se resuelve con las mismas claves estables y la idempotencia del proveedor: si la confirmación gana, la liberación falla y la revisión queda `EJECUTADA`; si la liberación gana, la confirmación falla y la revisión queda `CANCELADA`. El trabajador de compensación retoma las intenciones `PENDIENTE` y las liberaciones `LIBERANDO` que quedaron interrumpidas por un reinicio.
-
-La integración de riesgo externo simulada, su vencimiento y la revisión manual están implementados. El proveedor de riesgo real queda para una etapa posterior.
-
-### Reenvío
-
-Solo el dueño puede reenviar una solicitud cuya revisión actual esté `RECHAZADA`, dentro de los 30 días posteriores al rechazo y con un máximo de tres revisiones en total. El reenvío crea una revisión y un proceso nuevos, recalcula riesgo y plan y conserva el historial, las decisiones y las tareas de la revisión anterior.
-
-```powershell
-Invoke-RestMethod `
-  -Method Post `
-  -Uri "http://localhost:8080/api/v1/solicitudes/$($creacion.id)/reenvios" `
-  -Headers @{ Authorization = "Bearer $($respuesta.token)" } `
-  -ContentType "application/json" `
-  -Body '{"tipoOperacion":"NORMAL","monto":75000000,"moneda":"PYG","descripcion":"Pago corregido","justificacion":"Se ajusta el monto a la documentacion"}'
-```
-
-La respuesta `201` tiene el mismo contrato que la creación, con `revision` incrementada y el `Location` de la solicitud. Errores: `400 SOLICITUD_INVALIDA`, `403 ACCESO_DENEGADO`, `404 RECURSO_NO_ENCONTRADO`, `409 CONFLICTO_DATOS` y `422 REENVIO_NO_PERMITIDO`.
-
-## API de demostración
-
-Requiere `Authorization: Bearer <token>`:
-
-```text
-POST http://localhost:8080/api/v1/solicitudes-prueba
-GET  http://localhost:8080/api/v1/solicitudes-prueba/{id}
-```
-
-No es la API final de solicitudes.
-
-## Limitaciones de esta versión
-
-- No hay refresh tokens, revocación inmediata ni recuperación de contraseña.
-- Un token sigue válido hasta su vencimiento; el usuario se revalida como activo en cada consulta, pero los roles del token no cambian hasta que vence.
-- Los roles del token no cambian hasta que vence; `/autenticacion/yo` muestra los roles actuales de la base.
-- El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
-- La API cancela solicitudes y usa un proveedor financiero simulado; no ejecuta operaciones financieras reales. El reenvío está disponible solo para el dueño y con las reglas de la sección de reenvío.
-- Las rutas combinadas, el paralelismo, el rechazo, el reenvío, la cancelación, la compensación, la recuperación de ejecuciones inciertas y la integración simulada de riesgo externo con vencimiento y revisión manual están implementados. El proveedor de riesgo real queda para etapas posteriores.
-- El incidente de ejecución no usa `REVISION_MANUAL` para no bloquear el reintento seguro; la intervención se realiza desde la API de incidentes. La compensación usa `REVISION_MANUAL` como estado de su propia intención, no como estado de la revisión. La revisión manual de riesgo también usa `REVISION_MANUAL`, pero se distingue por la existencia de `tarea_revision_riesgo`.
-- El vencimiento se mide desde que el proceso entra en la espera externa, después de las aprobaciones. Un evento temprano que llegue antes de la suscripción sigue esperando sin consumir intentos.
-- Un evento cuya revisión nunca aparece queda `PENDIENTE` en el inbox. No se agregó una vigencia separada para eventos huérfanos en esta iteración.
-- Si el plan recalculado por la revisión manual no coincide con las tareas existentes, la resolución se rechaza y la revisión permanece en `REVISION_MANUAL`. Con la política actual el plan no cambia porque la evaluación externa solo aplica por encima de 200 millones.
-- La notificación de 24 horas y la reasignación de 48 horas están implementadas. No hay reasignación manual por administrador ni notificación por correo.
-- No se implementó marcar notificaciones como leídas.
-- Si el superior elegido es el creador, la tarea queda asignada a una persona que no puede aprobarla; la recuperación operativa es de una etapa posterior.
-- El creador no puede aprobar sus propias tareas.
-- El detalle recalcula el plan de aprobación con las políticas vigentes, porque el plan no se persiste.
-- El auditor puede consultar el historial, pero no el detalle ni el proceso de una solicitud ajena.
-- La API `/api/v1/solicitudes-prueba` es la demostración de prueba y no debe usarse para operaciones reales.
-
-## Tecnologías
-
-- Java 21
-- Spring Boot 3.5.16
-- Spring Security OAuth2 Resource Server y JWT
-- Flowable 7.2.0
-- PostgreSQL 16
-- Maven Wrapper
-- JUnit 5, Testcontainers, WireMock y ArchUnit
-
-> Este README se completará con la documentación de API, escenarios,
-> arquitectura y decisiones a medida que avance el proyecto.
+| La aplicación no arranca | Falta `JWT_SECRETO` o tiene menos de 32 bytes | Definirlo en `.env` con el comando del inicio rápido. |
+| El simulador responde `401` | `PROVEEDOR_FINANCIERO_SECRETO` vacío | Asignar un valor no vacío y reiniciar. |
+| El riesgo externo no avanza | `RIESGO_EXTERNO_SECRETO` vacío | Asignar un valor no vacío y reiniciar. |
+| `docker compose` falla | Docker Desktop apagado | Abrirlo y esperar el motor. |
+| El puerto 8080 está ocupado | Otro proceso escucha en ese puerto | Detenerlo o cambiar `server.port`. |
+| Hibernate reporta esquema inválido | Base con un esquema viejo | Recrear la base con `docker compose down -v` y volver a levantar. |
