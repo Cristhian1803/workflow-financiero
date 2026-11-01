@@ -73,7 +73,7 @@ por correo ni estado de “leída”.
 `ValidadorMoneda` acepta únicamente `PYG`. Los montos usan `NUMERIC(19,0)` y
 `BigDecimal` sin decimales.
 
-- **Motivo:** es la regla del enunciado.
+- **Motivo:** es la regla de negocio vigente.
 - **Siguiente paso:** catálogo multimoneda, tipo de cambio y una escala por
   moneda.
 
@@ -84,7 +84,7 @@ por correo ni estado de “leída”.
 nivel es `ALTO`. Por eso, en ese tramo, un riesgo alto o una revisión manual no
 suman aprobaciones nuevas.
 
-- **Motivo:** la política vigente es la del enunciado.
+- **Motivo:** la política vigente es la del proyecto.
 - **Siguiente paso:** si se agregan roles por riesgo, revisar la consolidación y
   el recálculo del plan.
 
@@ -108,10 +108,11 @@ la versión con la que se iniciaron.
 
 ### El endpoint del spike se conserva
 
-`ControladorSolicitudPrueba` sigue en el código como demostración no productiva.
+`ControladorSolicitudPrueba` sigue en el código como demostración no productiva y
+está oculto de OpenAPI. Solo existe en los perfiles `desarrollo` y `pruebas`.
 
 - **Motivo:** se conserva para mostrar el circuito mínimo del motor.
-- **Siguiente paso:** ocultarlo de OpenAPI y retirarlo en una limpieza posterior.
+- **Siguiente paso:** retirarlo en una limpieza posterior.
 
 ## Operación
 
@@ -139,7 +140,7 @@ ArchUnit está declarado en `pom.xml`, pero no hay reglas activas. La separació
 entre `dominio`, `aplicacion`, `api` e `infraestructura` se sostiene por
 convención y revisión.
 
-- **Motivo:** no se agregaron reglas en esta etapa para no cambiar el alcance.
+- **Motivo:** no se agregaron reglas para no ampliar el alcance de esta entrega.
 - **Siguiente paso:** reglas que prohíban a `dominio` depender de otras capas y a
   `api` depender de la persistencia.
 

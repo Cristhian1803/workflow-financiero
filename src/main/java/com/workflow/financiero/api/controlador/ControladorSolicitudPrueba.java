@@ -6,6 +6,7 @@ import com.workflow.financiero.api.contrato.SolicitudPruebaRespuesta;
 import com.workflow.financiero.aplicacion.servicio.ServicioFlujoMinimo;
 import com.workflow.financiero.dominio.modelo.EventoSolicitudPrueba;
 import com.workflow.financiero.dominio.modelo.SolicitudPrueba;
+import io.swagger.v3.oas.annotations.Hidden;
 import java.net.URI;
 import java.util.List;
 import java.util.UUID;
@@ -20,8 +21,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * API minima de demostracion.
+ * API mínima de demostración. Solo existe en perfiles no productivos y no se
+ * publica en OpenAPI.
  */
+@Hidden
 @RestController
 @RequestMapping("/api/v1/solicitudes-prueba")
 @Profile({"desarrollo", "pruebas"})
