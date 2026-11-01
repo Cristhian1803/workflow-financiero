@@ -63,6 +63,7 @@ public class ServicioEventoExterno {
     private final SolicitudFinancieraRepositorio solicitudRepositorio;
     private final RevisionSolicitudRepositorio revisionRepositorio;
     private final ServicioEventoSolicitud servicioEvento;
+    private final ServicioIncidente servicioIncidente;
     private final PuertoProceso puertoProceso;
     private final PropiedadesRiesgoExterno propiedades;
     private final Clock reloj;
@@ -180,18 +181,30 @@ public class ServicioEventoExterno {
                 "La revisión del evento ya no es la actual"
             );
         }
-        if (revision.getEstado().esTerminal()
-            || revision.getEstado() == EstadoRevision.COMPENSANDO
-            || revision.getEstado() == EstadoRevision.REVISION_MANUAL) {
+        if (evaluacionRepositorio.buscarVigentePorRevision(
+                revision.getId(),
+                OrigenRiesgo.MANUAL,
+                List.of(EstadoEvaluacionRiesgo.MANUAL))
+            .isPresent()) {
             return obsoleto(
                 evento,
-                "La revisión no admite el resultado externo"
+                "La revisión ya fue resuelta manualmente"
             );
         }
-        if (revision.getEstado() != EstadoRevision.PENDIENTE_APROBACION) {
+
+        EstadoRevision estado = revision.getEstado();
+        if (estado == EstadoRevision.RECIBIDA
+            || estado == EstadoRevision.VALIDANDO
+            || estado == EstadoRevision.EVALUANDO_RIESGO) {
             return esperar(
                 evento,
                 "La revisión todavía no está esperando el riesgo externo"
+            );
+        }
+        if (estado != EstadoRevision.PENDIENTE_APROBACION) {
+            return obsoleto(
+                evento,
+                "La revisión no admite el resultado externo: " + estado
             );
         }
         if (revision.getIdentificadorProceso() == null
@@ -265,6 +278,12 @@ public class ServicioEventoExterno {
         evaluacionRepositorio.flush();
         revisionRepositorio.flush();
         eventoRepositorio.flush();
+        servicioIncidente.resolverRiesgoExternoPorRevision(
+            revision.getId(),
+            null,
+            "Evento externo procesado",
+            evento.getCorrelacion()
+        );
 
         puertoProceso.enviarMensaje(
             MENSAJE_RIESGO,
@@ -292,6 +311,16 @@ public class ServicioEventoExterno {
             propiedades.maximoIntentos()
         );
         eventoRepositorio.flush();
+        if (evento.getProximoIntentoEn() == null
+            && evento.getSolicitud() != null
+            && evento.getRevision() != null) {
+            servicioIncidente.crearRiesgoExterno(
+                evento.getSolicitud(),
+                evento.getRevision(),
+                "Se agotaron los reintentos de correlación del evento externo",
+                evento.getCorrelacion()
+            );
+        }
     }
 
     @Transactional

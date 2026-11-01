@@ -37,6 +37,7 @@ public class ServicioSolicitudRiesgoExterno {
     private final EvaluacionRiesgoRepositorio evaluacionRepositorio;
     private final PropiedadesRiesgoExterno propiedades;
     private final PropiedadesEjecucion propiedadesEjecucion;
+    private final ServicioIncidente servicioIncidente;
 
     @Transactional
     public EvaluacionRiesgo registrarIntencion(
@@ -128,6 +129,15 @@ public class ServicioSolicitudRiesgoExterno {
             propiedades.maximoIntentos()
         );
         evaluacionRepositorio.flush();
+        if (evaluacion.getProximoIntentoEn() == null
+            && evaluacion.estaPendiente()) {
+            servicioIncidente.crearRiesgoExterno(
+                evaluacion.getRevision().getSolicitud(),
+                evaluacion.getRevision(),
+                "Se agotaron los reintentos de envío de la evaluación externa",
+                evaluacion.getCorrelacion()
+            );
+        }
     }
 
     private EvaluacionRiesgo bloquear(UUID idEvaluacion) {

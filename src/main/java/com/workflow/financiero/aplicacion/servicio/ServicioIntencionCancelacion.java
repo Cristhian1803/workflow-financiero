@@ -8,6 +8,7 @@ import com.workflow.financiero.dominio.ejecucion.EstadoOperacionFinanciera;
 import com.workflow.financiero.dominio.ejecucion.HuellaOperacionFinanciera;
 import com.workflow.financiero.dominio.ejecucion.ResultadoOperacionFinanciera;
 import com.workflow.financiero.dominio.estado.ContextoTransicion;
+import com.workflow.financiero.dominio.estado.EstadoEvaluacionRiesgo;
 import com.workflow.financiero.dominio.estado.EstadoIntentoEjecucion;
 import com.workflow.financiero.dominio.estado.EstadoRevision;
 import com.workflow.financiero.dominio.estado.EstadoTareaAprobacion;
@@ -23,6 +24,8 @@ import com.workflow.financiero.dominio.modelo.Rol;
 import com.workflow.financiero.dominio.modelo.SolicitudFinanciera;
 import com.workflow.financiero.dominio.modelo.TareaAprobacion;
 import com.workflow.financiero.dominio.modelo.Usuario;
+import com.workflow.financiero.dominio.regla.riesgo.OrigenRiesgo;
+import com.workflow.financiero.infraestructura.persistencia.EvaluacionRiesgoRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.IntentoCompensacionRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.IntentoEjecucionRepositorio;
 import com.workflow.financiero.infraestructura.persistencia.RevisionSolicitudRepositorio;
@@ -51,6 +54,7 @@ public class ServicioIntencionCancelacion {
 
     private final SolicitudFinancieraRepositorio solicitudRepositorio;
     private final RevisionSolicitudRepositorio revisionRepositorio;
+    private final EvaluacionRiesgoRepositorio evaluacionRepositorio;
     private final IntentoEjecucionRepositorio intentoRepositorio;
     private final IntentoCompensacionRepositorio compensacionRepositorio;
     private final ServicioIntencionCompensacion servicioCompensacion;
@@ -60,6 +64,7 @@ public class ServicioIntencionCancelacion {
     private final ServicioEventoSolicitud servicioEvento;
     private final ServicioTransicionRevision servicioTransicion;
     private final ServicioIncidente servicioIncidente;
+    private final ServicioTareaRevisionRiesgo servicioTareaRevisionRiesgo;
     private final PuertoCancelacionProceso puertoCancelacion;
 
     @Transactional
@@ -91,8 +96,10 @@ public class ServicioIntencionCancelacion {
                 "La revisión ya está en estado " + estado);
         }
         if (estado == EstadoRevision.REVISION_MANUAL) {
-            throw new CancelacionNoPermitidaException(
-                "La revisión requiere el procedimiento de revisión manual");
+            if (!servicioTareaRevisionRiesgo.tienePendiente(revision.getId())) {
+                throw new CancelacionNoPermitidaException(
+                    "La revisión requiere el procedimiento de revisión manual");
+            }
         }
         if (estado == EstadoRevision.COMPENSANDO
             || (intento != null
@@ -225,6 +232,12 @@ public class ServicioIntencionCancelacion {
             preparacion.correlacion()
         );
         servicioIncidente.resolverCompensacionPorRevision(
+            revision.getId(),
+            preparacion.actual(),
+            "Cancelación con compensación",
+            preparacion.correlacion()
+        );
+        servicioIncidente.resolverRiesgoExternoPorRevision(
             revision.getId(),
             preparacion.actual(),
             "Cancelación con compensación",
@@ -387,6 +400,12 @@ public class ServicioIntencionCancelacion {
             "Cancelación sin ejecución",
             correlacion
         );
+        servicioIncidente.resolverRiesgoExternoPorRevision(
+            revision.getId(),
+            actual,
+            "Cancelación sin ejecución",
+            correlacion
+        );
         solicitarCancelacionProceso(revision, motivo);
 
         return new PreparacionCancelacion(
@@ -543,27 +562,37 @@ public class ServicioIntencionCancelacion {
             .stream()
             .filter(tarea -> tarea.getEstado() == EstadoTareaAprobacion.PENDIENTE)
             .toList();
-        if (pendientes.isEmpty()) {
-            return;
+        if (!pendientes.isEmpty()) {
+            pendientes.forEach(TareaAprobacion::cancelar);
+            tareaRepositorio.saveAllAndFlush(pendientes);
+
+            for (TareaAprobacion tarea : pendientes) {
+                servicioEvento.registrar(
+                    solicitud,
+                    revision,
+                    TipoEventoSolicitud.TAREA_CANCELADA,
+                    actor,
+                    tarea.getRol() == null ? rol : tarea.getRol(),
+                    null,
+                    null,
+                    correlacion,
+                    "Tarea de " + tarea.getRol().getCodigo()
+                        + " cancelada por cancelación de la solicitud"
+                );
+            }
         }
 
-        pendientes.forEach(TareaAprobacion::cancelar);
-        tareaRepositorio.saveAllAndFlush(pendientes);
-
-        for (TareaAprobacion tarea : pendientes) {
-            servicioEvento.registrar(
-                solicitud,
-                revision,
-                TipoEventoSolicitud.TAREA_CANCELADA,
-                actor,
-                tarea.getRol() == null ? rol : tarea.getRol(),
-                null,
-                null,
-                correlacion,
-                "Tarea de " + tarea.getRol().getCodigo()
-                    + " cancelada por cancelación de la solicitud"
-            );
-        }
+        servicioTareaRevisionRiesgo.cancelarPendiente(
+            revision, actor, rol, correlacion);
+        evaluacionRepositorio.buscarVigentePorRevisionParaActualizar(
+                revision.getId(),
+                OrigenRiesgo.EXTERNO,
+                List.of(EstadoEvaluacionRiesgo.PENDIENTE))
+            .ifPresent(evaluacion -> {
+                evaluacion.marcarObsoleta(
+                    "La solicitud fue cancelada antes del resultado externo");
+                evaluacionRepositorio.flush();
+            });
     }
 
     private void validarIntentoParaCancelar(IntentoEjecucion intento) {
