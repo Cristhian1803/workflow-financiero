@@ -130,6 +130,56 @@ public class ServicioIncidente {
         return incidente;
     }
 
+    /**
+     * Registra un incidente de riesgo externo por revisión. La referencia es
+     * la revisión para que los fallos de envío y correlación compartan una
+     * sola causa operativa. No admite reintento automático: la recuperación
+     * es la revisión manual.
+     */
+    @Transactional
+    public Incidente crearRiesgoExterno(
+        SolicitudFinanciera solicitud,
+        RevisionSolicitud revision,
+        String motivo,
+        String correlacion
+    ) {
+        Optional<Incidente> existente = incidenteRepositorio
+            .findByTipoAndReferencia(
+                TipoIncidente.RIESGO_EXTERNO, revision.getId());
+        if (existente.isPresent()) {
+            Incidente incidente = existente.get();
+            incidente.actualizarMotivo(motivo);
+            if (incidente.getEstado() == EstadoIncidente.RESUELTO
+                || incidente.getEstado() == EstadoIncidente.CERRADO) {
+                incidente.reabrir(motivo);
+            }
+            incidente.marcarNoReintentable(motivo);
+            return incidente;
+        }
+
+        Incidente incidente = new Incidente(
+            solicitud,
+            revision,
+            TipoIncidente.RIESGO_EXTERNO,
+            revision.getId(),
+            motivo,
+            false
+        );
+        incidenteRepositorio.saveAndFlush(incidente);
+        servicioEvento.registrar(
+            solicitud,
+            revision,
+            TipoEventoSolicitud.INCIDENTE_CREADO,
+            null,
+            null,
+            revision.getEstado(),
+            revision.getEstado(),
+            correlacion,
+            "Incidente de riesgo externo creado"
+        );
+        return incidente;
+    }
+
     @Transactional(readOnly = true)
     public List<IncidenteDetalle> listarAbiertos(UsuarioActual actual) {
         exigirOperador(actual);
@@ -240,6 +290,23 @@ public class ServicioIncidente {
         Optional<Incidente> encontrado = incidenteRepositorio
             .findByRevisionIdAndTipo(
                 revisionId, TipoIncidente.COMPENSACION);
+        if (encontrado.isEmpty()) {
+            return null;
+        }
+        return resolver(
+            encontrado.get().getId(), actual, resultado, correlacion);
+    }
+
+    @Transactional
+    public IncidenteDetalle resolverRiesgoExternoPorRevision(
+        UUID revisionId,
+        UsuarioActual actual,
+        String resultado,
+        String correlacion
+    ) {
+        Optional<Incidente> encontrado = incidenteRepositorio
+            .findByRevisionIdAndTipo(
+                revisionId, TipoIncidente.RIESGO_EXTERNO);
         if (encontrado.isEmpty()) {
             return null;
         }

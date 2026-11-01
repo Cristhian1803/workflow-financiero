@@ -37,6 +37,7 @@ flujo:
     proveedor: ${RIESGO_EXTERNO_PROVEEDOR:proveedor-riesgo-simulado}
     secreto: ${RIESGO_EXTERNO_SECRETO:}
     ventana-tiempo: ${RIESGO_EXTERNO_VENTANA_TIEMPO:PT5M}
+    vencimiento: ${RIESGO_EXTERNO_VENCIMIENTO:PT24H}
     reintento: ${RIESGO_EXTERNO_REINTENTO:PT5S}
     maximo-intentos: ${RIESGO_EXTERNO_MAXIMO_INTENTOS:3}
 

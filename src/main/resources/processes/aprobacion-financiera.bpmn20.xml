@@ -95,15 +95,55 @@
         <exclusiveGateway id="decidirRiesgoExterno" name="¿Requiere riesgo externo?"
                           default="flujoSinRiesgoExterno"/>
 
-        <intermediateCatchEvent id="esperarRiesgoExterno" name="Esperar riesgo externo">
+        <eventBasedGateway id="esperarEventoRiesgoExterno"
+                           name="Esperar riesgo externo"/>
+
+        <intermediateCatchEvent id="esperarRiesgoExterno" name="Riesgo externo recibido">
             <messageEventDefinition messageRef="mensajeRiesgoEvaluado"/>
         </intermediateCatchEvent>
+
+        <intermediateCatchEvent id="vencerRiesgoExterno"
+                                name="Vencimiento del riesgo externo">
+            <timerEventDefinition>
+                <timeDuration xsi:type="tFormalExpression">${duracionRiesgoExterno}</timeDuration>
+            </timerEventDefinition>
+        </intermediateCatchEvent>
+
+        <serviceTask id="prepararRevisionManual" name="Preparar revisión manual"
+                     flowable:delegateExpression="${delegadoPrepararRevisionManual}">
+            <documentation>
+                Marca la evaluación externa pendiente como vencida y deja la
+                revisión en REVISION_MANUAL. No crea aprobaciones ni solicita
+                otra evaluación externa.
+            </documentation>
+        </serviceTask>
+
+        <exclusiveGateway id="decidirRevisionManual"
+                          name="¿Requiere revisión manual?"
+                          default="flujoSinRevisionManual"/>
+
+        <userTask id="tareaRevisionRiesgoManual"
+                  name="Revisión manual de riesgo"
+                  flowable:candidateGroups="ANALISTA_RIESGOS,JEFE_RIESGOS">
+            <documentation>
+                Tarea humana para registrar el nivel de riesgo cuando la
+                evaluación externa no llegó. No aprueba la solicitud ni exime
+                de las aprobaciones ya exigidas.
+            </documentation>
+            <extensionElements>
+                <flowable:taskListener event="create"
+                                       delegateExpression="${escuchaTareaRevisionRiesgo}"/>
+            </extensionElements>
+        </userTask>
+
+        <endEvent id="finRiesgoVencidoSinRevision"
+                  name="Vencimiento sin revisión manual"/>
 
         <serviceTask id="verificarRiesgoExterno" name="Verificar riesgo externo"
                      flowable:delegateExpression="${delegadoVerificarRiesgoExterno}">
             <documentation>
-                Valida la evaluación externa persistida y el evento aplicado antes de
-                permitir el avance. El resultado se recibe por el inbox firmado.
+                Valida la evaluación externa o manual persistida y el evento
+                aplicado antes de permitir el avance.
             </documentation>
         </serviceTask>
 
@@ -301,14 +341,45 @@
                       targetRef="decidirRiesgoExterno"/>
 
         <sequenceFlow id="flujoRequiereRiesgoExterno" sourceRef="decidirRiesgoExterno"
-                      targetRef="esperarRiesgoExterno">
+                      targetRef="esperarEventoRiesgoExterno">
             <conditionExpression xsi:type="tFormalExpression">${requiereEvaluacionExterna == true}</conditionExpression>
         </sequenceFlow>
 
         <sequenceFlow id="flujoSinRiesgoExterno" sourceRef="decidirRiesgoExterno"
                       targetRef="marcarAprobada"/>
 
-        <sequenceFlow id="flujoEsperaRiesgoExterno" sourceRef="esperarRiesgoExterno"
+        <sequenceFlow id="flujoEsperaRiesgoExterno"
+                      sourceRef="esperarEventoRiesgoExterno"
+                      targetRef="esperarRiesgoExterno"/>
+
+        <sequenceFlow id="flujoVencimientoRiesgoExterno"
+                      sourceRef="esperarEventoRiesgoExterno"
+                      targetRef="vencerRiesgoExterno"/>
+
+        <sequenceFlow id="flujoEsperaRiesgoExternoRecibido"
+                      sourceRef="esperarRiesgoExterno"
+                      targetRef="verificarRiesgoExterno"/>
+
+        <sequenceFlow id="flujoVencimientoRiesgoExternoManual"
+                      sourceRef="vencerRiesgoExterno"
+                      targetRef="prepararRevisionManual"/>
+
+        <sequenceFlow id="flujoPrepararRevisionManual"
+                      sourceRef="prepararRevisionManual"
+                      targetRef="decidirRevisionManual"/>
+
+        <sequenceFlow id="flujoRevisionManualRequerida"
+                      sourceRef="decidirRevisionManual"
+                      targetRef="tareaRevisionRiesgoManual">
+            <conditionExpression xsi:type="tFormalExpression">${revisionManualRequerida == true}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoSinRevisionManual"
+                      sourceRef="decidirRevisionManual"
+                      targetRef="finRiesgoVencidoSinRevision"/>
+
+        <sequenceFlow id="flujoRevisionManualResuelta"
+                      sourceRef="tareaRevisionRiesgoManual"
                       targetRef="verificarRiesgoExterno"/>
 
         <sequenceFlow id="flujoVerificarRiesgoExterno" sourceRef="verificarRiesgoExterno"
@@ -452,6 +523,30 @@
             </bpmndi:BPMNShape>
             <bpmndi:BPMNShape id="esperarRiesgoExterno_di" bpmnElement="esperarRiesgoExterno">
                 <omgdc:Bounds x="1800" y="252" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="esperarEventoRiesgoExterno_di"
+                              bpmnElement="esperarEventoRiesgoExterno"
+                              isMarkerVisible="true">
+                <omgdc:Bounds x="1800" y="395" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="vencerRiesgoExterno_di" bpmnElement="vencerRiesgoExterno">
+                <omgdc:Bounds x="1890" y="500" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="prepararRevisionManual_di" bpmnElement="prepararRevisionManual">
+                <omgdc:Bounds x="2000" y="480" width="130" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="decidirRevisionManual_di"
+                              bpmnElement="decidirRevisionManual"
+                              isMarkerVisible="true">
+                <omgdc:Bounds x="2170" y="495" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="tareaRevisionRiesgoManual_di"
+                              bpmnElement="tareaRevisionRiesgoManual">
+                <omgdc:Bounds x="2250" y="480" width="130" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="finRiesgoVencidoSinRevision_di"
+                              bpmnElement="finRiesgoVencidoSinRevision">
+                <omgdc:Bounds x="2250" y="600" width="36" height="36"/>
             </bpmndi:BPMNShape>
             <bpmndi:BPMNShape id="verificarRiesgoExterno_di" bpmnElement="verificarRiesgoExterno">
                 <omgdc:Bounds x="1890" y="230" width="130" height="80"/>
@@ -647,16 +742,56 @@
             </bpmndi:BPMNEdge>
             <bpmndi:BPMNEdge id="flujoRequiereRiesgoExterno_di" bpmnElement="flujoRequiereRiesgoExterno">
                 <omgdi:waypoint x="1725" y="395"/>
-                <omgdi:waypoint x="1725" y="270"/>
-                <omgdi:waypoint x="1800" y="270"/>
+                <omgdi:waypoint x="1725" y="420"/>
+                <omgdi:waypoint x="1800" y="420"/>
             </bpmndi:BPMNEdge>
             <bpmndi:BPMNEdge id="flujoSinRiesgoExterno_di" bpmnElement="flujoSinRiesgoExterno">
                 <omgdi:waypoint x="1750" y="420"/>
                 <omgdi:waypoint x="1890" y="420"/>
             </bpmndi:BPMNEdge>
             <bpmndi:BPMNEdge id="flujoEsperaRiesgoExterno_di" bpmnElement="flujoEsperaRiesgoExterno">
+                <omgdi:waypoint x="1825" y="395"/>
+                <omgdi:waypoint x="1825" y="270"/>
+                <omgdi:waypoint x="1800" y="270"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoVencimientoRiesgoExterno_di"
+                             bpmnElement="flujoVencimientoRiesgoExterno">
+                <omgdi:waypoint x="1825" y="445"/>
+                <omgdi:waypoint x="1825" y="518"/>
+                <omgdi:waypoint x="1890" y="518"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoEsperaRiesgoExternoRecibido_di"
+                             bpmnElement="flujoEsperaRiesgoExternoRecibido">
                 <omgdi:waypoint x="1836" y="270"/>
                 <omgdi:waypoint x="1890" y="270"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoVencimientoRiesgoExternoManual_di"
+                             bpmnElement="flujoVencimientoRiesgoExternoManual">
+                <omgdi:waypoint x="1926" y="518"/>
+                <omgdi:waypoint x="2000" y="520"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoPrepararRevisionManual_di"
+                             bpmnElement="flujoPrepararRevisionManual">
+                <omgdi:waypoint x="2130" y="520"/>
+                <omgdi:waypoint x="2170" y="520"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoRevisionManualRequerida_di"
+                             bpmnElement="flujoRevisionManualRequerida">
+                <omgdi:waypoint x="2220" y="520"/>
+                <omgdi:waypoint x="2250" y="520"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoSinRevisionManual_di"
+                             bpmnElement="flujoSinRevisionManual">
+                <omgdi:waypoint x="2195" y="545"/>
+                <omgdi:waypoint x="2195" y="618"/>
+                <omgdi:waypoint x="2250" y="618"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoRevisionManualResuelta_di"
+                             bpmnElement="flujoRevisionManualResuelta">
+                <omgdi:waypoint x="2315" y="480"/>
+                <omgdi:waypoint x="2315" y="210"/>
+                <omgdi:waypoint x="1955" y="210"/>
+                <omgdi:waypoint x="1955" y="230"/>
             </bpmndi:BPMNEdge>
             <bpmndi:BPMNEdge id="flujoVerificarRiesgoExterno_di" bpmnElement="flujoVerificarRiesgoExterno">
                 <omgdi:waypoint x="1955" y="310"/>

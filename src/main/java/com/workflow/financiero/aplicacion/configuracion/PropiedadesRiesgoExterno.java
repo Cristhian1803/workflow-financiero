@@ -12,6 +12,7 @@ public record PropiedadesRiesgoExterno(
     String proveedor,
     String secreto,
     Duration ventanaTiempo,
+    Duration vencimiento,
     Duration reintento,
     int maximoIntentos
 ) {
@@ -25,6 +26,11 @@ public record PropiedadesRiesgoExterno(
             || ventanaTiempo.isNegative()) {
             throw new IllegalStateException(
                 "La ventana de la firma de riesgo debe ser mayor que cero");
+        }
+        if (vencimiento == null || vencimiento.isZero()
+            || vencimiento.isNegative()) {
+            throw new IllegalStateException(
+                "El vencimiento del riesgo externo debe ser mayor que cero");
         }
         if (reintento == null || reintento.isNegative()) {
             throw new IllegalStateException(
@@ -40,6 +46,7 @@ public record PropiedadesRiesgoExterno(
     public String toString() {
         return "PropiedadesRiesgoExterno[proveedor=" + proveedor
             + ", secreto=***, ventanaTiempo=" + ventanaTiempo
+            + ", vencimiento=" + vencimiento
             + ", reintento=" + reintento
             + ", maximoIntentos=" + maximoIntentos + "]";
     }
