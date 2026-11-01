@@ -18,7 +18,15 @@ public enum CodigoError {
     SOLICITUD_PRUEBA_INVALIDA(HttpStatus.BAD_REQUEST, "Solicitud de prueba inválida"),
     RECURSO_NO_ENCONTRADO(HttpStatus.NOT_FOUND, "Recurso no encontrado"),
     TAREA_NO_ENCONTRADA(HttpStatus.NOT_FOUND, "Tarea no encontrada"),
+    TAREA_REVISION_NO_ENCONTRADA(
+        HttpStatus.NOT_FOUND,
+        "Tarea de revisión de riesgo no encontrada"
+    ),
     TAREA_YA_RESUELTA(HttpStatus.CONFLICT, "Tarea ya resuelta"),
+    REVISION_RIESGO_YA_RESUELTA(
+        HttpStatus.CONFLICT,
+        "Revisión de riesgo ya resuelta"
+    ),
     TRANSICION_TAREA_INVALIDA(HttpStatus.CONFLICT, "Transición de tarea inválida"),
     APROBACION_NO_PERMITIDA(HttpStatus.FORBIDDEN, "Aprobación no permitida"),
     SEGREGACION_FUNCIONES(HttpStatus.FORBIDDEN, "Segregación de funciones"),

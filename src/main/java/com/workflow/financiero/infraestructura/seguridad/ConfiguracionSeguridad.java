@@ -112,6 +112,14 @@ public class ConfiguracionSeguridad {
                     "/api/v1/tareas-aprobacion/*/rechazar"
                 ).hasAnyRole(ROLES_APROBACION);
                 autorizacion.requestMatchers(
+                    HttpMethod.GET,
+                    "/api/v1/tareas-revision-riesgo"
+                ).hasAnyRole("ANALISTA_RIESGOS", "JEFE_RIESGOS");
+                autorizacion.requestMatchers(
+                    HttpMethod.POST,
+                    "/api/v1/tareas-revision-riesgo/*/resolver"
+                ).hasAnyRole("ANALISTA_RIESGOS", "JEFE_RIESGOS");
+                autorizacion.requestMatchers(
                     "/api/v1/incidentes/**"
                 ).hasAnyRole("OPERACIONES", "ADMINISTRADOR");
                 autorizacion.anyRequest().authenticated();
