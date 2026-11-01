@@ -8,6 +8,8 @@
              targetNamespace="http://workflow.financiero/proceso/aprobacion-financiera">
 
     <message id="mensajeRiesgoEvaluado" name="RIESGO_EVALUADO"/>
+    <message id="mensajeEjecucionFinalizada" name="EJECUCION_FINALIZADA"/>
+    <message id="mensajeCancelacionSolicitada" name="CANCELACION_SOLICITADA"/>
 
     <process id="aprobacionFinanciera" name="Aprobación financiera" isExecutable="true">
         <documentation>
@@ -93,15 +95,55 @@
         <exclusiveGateway id="decidirRiesgoExterno" name="¿Requiere riesgo externo?"
                           default="flujoSinRiesgoExterno"/>
 
-        <intermediateCatchEvent id="esperarRiesgoExterno" name="Esperar riesgo externo">
+        <eventBasedGateway id="esperarEventoRiesgoExterno"
+                           name="Esperar riesgo externo"/>
+
+        <intermediateCatchEvent id="esperarRiesgoExterno" name="Riesgo externo recibido">
             <messageEventDefinition messageRef="mensajeRiesgoEvaluado"/>
         </intermediateCatchEvent>
+
+        <intermediateCatchEvent id="vencerRiesgoExterno"
+                                name="Vencimiento del riesgo externo">
+            <timerEventDefinition>
+                <timeDuration xsi:type="tFormalExpression">${duracionRiesgoExterno}</timeDuration>
+            </timerEventDefinition>
+        </intermediateCatchEvent>
+
+        <serviceTask id="prepararRevisionManual" name="Preparar revisión manual"
+                     flowable:delegateExpression="${delegadoPrepararRevisionManual}">
+            <documentation>
+                Marca la evaluación externa pendiente como vencida y deja la
+                revisión en REVISION_MANUAL. No crea aprobaciones ni solicita
+                otra evaluación externa.
+            </documentation>
+        </serviceTask>
+
+        <exclusiveGateway id="decidirRevisionManual"
+                          name="¿Requiere revisión manual?"
+                          default="flujoSinRevisionManual"/>
+
+        <userTask id="tareaRevisionRiesgoManual"
+                  name="Revisión manual de riesgo"
+                  flowable:candidateGroups="ANALISTA_RIESGOS,JEFE_RIESGOS">
+            <documentation>
+                Tarea humana para registrar el nivel de riesgo cuando la
+                evaluación externa no llegó. No aprueba la solicitud ni exime
+                de las aprobaciones ya exigidas.
+            </documentation>
+            <extensionElements>
+                <flowable:taskListener event="create"
+                                       delegateExpression="${escuchaTareaRevisionRiesgo}"/>
+            </extensionElements>
+        </userTask>
+
+        <endEvent id="finRiesgoVencidoSinRevision"
+                  name="Vencimiento sin revisión manual"/>
 
         <serviceTask id="verificarRiesgoExterno" name="Verificar riesgo externo"
                      flowable:delegateExpression="${delegadoVerificarRiesgoExterno}">
             <documentation>
-                Valida el resultado externo recibido antes de permitir el avance. En esta
-                etapa se usa un fixture controlado.
+                Valida la evaluación externa o manual persistida y el evento
+                aplicado antes de permitir el avance.
             </documentation>
         </serviceTask>
 
@@ -113,22 +155,42 @@
             </documentation>
         </serviceTask>
 
-        <serviceTask id="prepararEjecucion" name="Preparar ejecución controlada"
+        <serviceTask id="prepararEjecucion" name="Preparar ejecución"
                      flowable:delegateExpression="${delegadoPrepararEjecucion}">
             <documentation>
-                Registra la preparación de la ejecución mediante un adaptador controlado,
-                sin llamar a un proveedor financiero.
+                Persiste la intención durable y deja la revisión en EJECUTANDO.
+                No llama al proveedor financiero.
             </documentation>
         </serviceTask>
 
-        <serviceTask id="registrarResultado" name="Registrar resultado controlado"
-                     flowable:delegateExpression="${delegadoRegistrarResultado}">
+        <intermediateCatchEvent id="esperarResultadoEjecucion"
+                                name="Esperar resultado de ejecución">
+            <messageEventDefinition messageRef="mensajeEjecucionFinalizada"/>
+        </intermediateCatchEvent>
+
+        <exclusiveGateway id="decidirResultadoEjecucion"
+                          name="Resultado de ejecución"
+                          default="flujoResultadoDesconocido"/>
+
+        <serviceTask id="marcarEjecutada" name="Marcar ejecutada"
+                     flowable:delegateExpression="${delegadoMarcarEjecutada}">
             <documentation>
-                Registra el resultado simulado y finaliza el proceso.
+                Transiciona la revisión a EJECUTADA y registra el resultado
+                confirmado por el proveedor.
+            </documentation>
+        </serviceTask>
+
+        <serviceTask id="marcarResultadoDesconocido"
+                     name="Marcar resultado desconocido"
+                     flowable:delegateExpression="${delegadoMarcarResultadoDesconocido}">
+            <documentation>
+                Transiciona la revisión a RESULTADO_DESCONOCIDO y conserva el
+                incidente para la reconciliación posterior.
             </documentation>
         </serviceTask>
 
         <endEvent id="finProceso" name="Fin del proceso"/>
+        <endEvent id="finResultadoDesconocido" name="Fin con resultado desconocido"/>
 
         <serviceTask id="registrarRechazo" name="Registrar rechazo"
                      flowable:delegateExpression="${delegadoRegistrarRechazo}">
@@ -279,14 +341,45 @@
                       targetRef="decidirRiesgoExterno"/>
 
         <sequenceFlow id="flujoRequiereRiesgoExterno" sourceRef="decidirRiesgoExterno"
-                      targetRef="esperarRiesgoExterno">
+                      targetRef="esperarEventoRiesgoExterno">
             <conditionExpression xsi:type="tFormalExpression">${requiereEvaluacionExterna == true}</conditionExpression>
         </sequenceFlow>
 
         <sequenceFlow id="flujoSinRiesgoExterno" sourceRef="decidirRiesgoExterno"
                       targetRef="marcarAprobada"/>
 
-        <sequenceFlow id="flujoEsperaRiesgoExterno" sourceRef="esperarRiesgoExterno"
+        <sequenceFlow id="flujoEsperaRiesgoExterno"
+                      sourceRef="esperarEventoRiesgoExterno"
+                      targetRef="esperarRiesgoExterno"/>
+
+        <sequenceFlow id="flujoVencimientoRiesgoExterno"
+                      sourceRef="esperarEventoRiesgoExterno"
+                      targetRef="vencerRiesgoExterno"/>
+
+        <sequenceFlow id="flujoEsperaRiesgoExternoRecibido"
+                      sourceRef="esperarRiesgoExterno"
+                      targetRef="verificarRiesgoExterno"/>
+
+        <sequenceFlow id="flujoVencimientoRiesgoExternoManual"
+                      sourceRef="vencerRiesgoExterno"
+                      targetRef="prepararRevisionManual"/>
+
+        <sequenceFlow id="flujoPrepararRevisionManual"
+                      sourceRef="prepararRevisionManual"
+                      targetRef="decidirRevisionManual"/>
+
+        <sequenceFlow id="flujoRevisionManualRequerida"
+                      sourceRef="decidirRevisionManual"
+                      targetRef="tareaRevisionRiesgoManual">
+            <conditionExpression xsi:type="tFormalExpression">${revisionManualRequerida == true}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoSinRevisionManual"
+                      sourceRef="decidirRevisionManual"
+                      targetRef="finRiesgoVencidoSinRevision"/>
+
+        <sequenceFlow id="flujoRevisionManualResuelta"
+                      sourceRef="tareaRevisionRiesgoManual"
                       targetRef="verificarRiesgoExterno"/>
 
         <sequenceFlow id="flujoVerificarRiesgoExterno" sourceRef="verificarRiesgoExterno"
@@ -296,10 +389,28 @@
                       targetRef="prepararEjecucion"/>
 
         <sequenceFlow id="flujoPrepararEjecucion" sourceRef="prepararEjecucion"
-                      targetRef="registrarResultado"/>
+                      targetRef="esperarResultadoEjecucion"/>
 
-        <sequenceFlow id="flujoRegistrarResultado" sourceRef="registrarResultado"
+        <sequenceFlow id="flujoEsperaResultadoEjecucion"
+                      sourceRef="esperarResultadoEjecucion"
+                      targetRef="decidirResultadoEjecucion"/>
+
+        <sequenceFlow id="flujoEjecucionConfirmada"
+                      sourceRef="decidirResultadoEjecucion"
+                      targetRef="marcarEjecutada">
+            <conditionExpression xsi:type="tFormalExpression">${resultadoEjecucion == 'CONFIRMADA'}</conditionExpression>
+        </sequenceFlow>
+
+        <sequenceFlow id="flujoResultadoDesconocido"
+                      sourceRef="decidirResultadoEjecucion"
+                      targetRef="marcarResultadoDesconocido"/>
+
+        <sequenceFlow id="flujoMarcarEjecutada" sourceRef="marcarEjecutada"
                       targetRef="finProceso"/>
+
+        <sequenceFlow id="flujoMarcarResultadoDesconocido"
+                      sourceRef="marcarResultadoDesconocido"
+                      targetRef="finResultadoDesconocido"/>
 
         <sequenceFlow id="flujoRechazo" sourceRef="registrarRechazo" targetRef="finRechazo"/>
 
@@ -329,6 +440,26 @@
                       targetRef="reasignarRiesgos"/>
         <sequenceFlow id="flujoFinReasignacionRiesgos" sourceRef="reasignarRiesgos"
                       targetRef="finReasignacionRiesgos"/>
+
+        <subProcess id="subprocesoCancelacion"
+                    name="Cancelación solicitada"
+                    triggeredByEvent="true">
+            <documentation>
+                Interrumpe las tareas humanas, los timers y el flujo principal
+                cuando la aplicación ya registró la cancelación y, si
+                correspondía, liberó la reserva. La compensación se orquesta
+                fuera del motor para no depender de este alcance.
+            </documentation>
+            <startEvent id="inicioCancelacion"
+                        name="Cancelación solicitada"
+                        isInterrupting="true">
+                <messageEventDefinition messageRef="mensajeCancelacionSolicitada"/>
+            </startEvent>
+            <endEvent id="finCancelacion" name="Fin por cancelación"/>
+            <sequenceFlow id="flujoCancelacion"
+                          sourceRef="inicioCancelacion"
+                          targetRef="finCancelacion"/>
+        </subProcess>
     </process>
 
     <bpmndi:BPMNDiagram id="BPMNDiagram_aprobacionFinanciera">
@@ -393,6 +524,30 @@
             <bpmndi:BPMNShape id="esperarRiesgoExterno_di" bpmnElement="esperarRiesgoExterno">
                 <omgdc:Bounds x="1800" y="252" width="36" height="36"/>
             </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="esperarEventoRiesgoExterno_di"
+                              bpmnElement="esperarEventoRiesgoExterno"
+                              isMarkerVisible="true">
+                <omgdc:Bounds x="1800" y="395" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="vencerRiesgoExterno_di" bpmnElement="vencerRiesgoExterno">
+                <omgdc:Bounds x="1890" y="500" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="prepararRevisionManual_di" bpmnElement="prepararRevisionManual">
+                <omgdc:Bounds x="2000" y="480" width="130" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="decidirRevisionManual_di"
+                              bpmnElement="decidirRevisionManual"
+                              isMarkerVisible="true">
+                <omgdc:Bounds x="2170" y="495" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="tareaRevisionRiesgoManual_di"
+                              bpmnElement="tareaRevisionRiesgoManual">
+                <omgdc:Bounds x="2250" y="480" width="130" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="finRiesgoVencidoSinRevision_di"
+                              bpmnElement="finRiesgoVencidoSinRevision">
+                <omgdc:Bounds x="2250" y="600" width="36" height="36"/>
+            </bpmndi:BPMNShape>
             <bpmndi:BPMNShape id="verificarRiesgoExterno_di" bpmnElement="verificarRiesgoExterno">
                 <omgdc:Bounds x="1890" y="230" width="130" height="80"/>
             </bpmndi:BPMNShape>
@@ -402,11 +557,27 @@
             <bpmndi:BPMNShape id="prepararEjecucion_di" bpmnElement="prepararEjecucion">
                 <omgdc:Bounds x="2060" y="380" width="130" height="80"/>
             </bpmndi:BPMNShape>
-            <bpmndi:BPMNShape id="registrarResultado_di" bpmnElement="registrarResultado">
-                <omgdc:Bounds x="2230" y="380" width="130" height="80"/>
+            <bpmndi:BPMNShape id="esperarResultadoEjecucion_di" bpmnElement="esperarResultadoEjecucion">
+                <omgdc:Bounds x="2230" y="402" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="decidirResultadoEjecucion_di"
+                              bpmnElement="decidirResultadoEjecucion"
+                              isMarkerVisible="true">
+                <omgdc:Bounds x="2300" y="395" width="50" height="50"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="marcarEjecutada_di" bpmnElement="marcarEjecutada">
+                <omgdc:Bounds x="2390" y="320" width="130" height="80"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="marcarResultadoDesconocido_di"
+                              bpmnElement="marcarResultadoDesconocido">
+                <omgdc:Bounds x="2390" y="480" width="130" height="80"/>
             </bpmndi:BPMNShape>
             <bpmndi:BPMNShape id="finProceso_di" bpmnElement="finProceso">
-                <omgdc:Bounds x="2410" y="402" width="36" height="36"/>
+                <omgdc:Bounds x="2570" y="342" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="finResultadoDesconocido_di"
+                              bpmnElement="finResultadoDesconocido">
+                <omgdc:Bounds x="2570" y="502" width="36" height="36"/>
             </bpmndi:BPMNShape>
 
             <bpmndi:BPMNShape id="registrarRechazo_di" bpmnElement="registrarRechazo">
@@ -571,16 +742,56 @@
             </bpmndi:BPMNEdge>
             <bpmndi:BPMNEdge id="flujoRequiereRiesgoExterno_di" bpmnElement="flujoRequiereRiesgoExterno">
                 <omgdi:waypoint x="1725" y="395"/>
-                <omgdi:waypoint x="1725" y="270"/>
-                <omgdi:waypoint x="1800" y="270"/>
+                <omgdi:waypoint x="1725" y="420"/>
+                <omgdi:waypoint x="1800" y="420"/>
             </bpmndi:BPMNEdge>
             <bpmndi:BPMNEdge id="flujoSinRiesgoExterno_di" bpmnElement="flujoSinRiesgoExterno">
                 <omgdi:waypoint x="1750" y="420"/>
                 <omgdi:waypoint x="1890" y="420"/>
             </bpmndi:BPMNEdge>
             <bpmndi:BPMNEdge id="flujoEsperaRiesgoExterno_di" bpmnElement="flujoEsperaRiesgoExterno">
+                <omgdi:waypoint x="1825" y="395"/>
+                <omgdi:waypoint x="1825" y="270"/>
+                <omgdi:waypoint x="1800" y="270"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoVencimientoRiesgoExterno_di"
+                             bpmnElement="flujoVencimientoRiesgoExterno">
+                <omgdi:waypoint x="1825" y="445"/>
+                <omgdi:waypoint x="1825" y="518"/>
+                <omgdi:waypoint x="1890" y="518"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoEsperaRiesgoExternoRecibido_di"
+                             bpmnElement="flujoEsperaRiesgoExternoRecibido">
                 <omgdi:waypoint x="1836" y="270"/>
                 <omgdi:waypoint x="1890" y="270"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoVencimientoRiesgoExternoManual_di"
+                             bpmnElement="flujoVencimientoRiesgoExternoManual">
+                <omgdi:waypoint x="1926" y="518"/>
+                <omgdi:waypoint x="2000" y="520"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoPrepararRevisionManual_di"
+                             bpmnElement="flujoPrepararRevisionManual">
+                <omgdi:waypoint x="2130" y="520"/>
+                <omgdi:waypoint x="2170" y="520"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoRevisionManualRequerida_di"
+                             bpmnElement="flujoRevisionManualRequerida">
+                <omgdi:waypoint x="2220" y="520"/>
+                <omgdi:waypoint x="2250" y="520"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoSinRevisionManual_di"
+                             bpmnElement="flujoSinRevisionManual">
+                <omgdi:waypoint x="2195" y="545"/>
+                <omgdi:waypoint x="2195" y="618"/>
+                <omgdi:waypoint x="2250" y="618"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoRevisionManualResuelta_di"
+                             bpmnElement="flujoRevisionManualResuelta">
+                <omgdi:waypoint x="2315" y="480"/>
+                <omgdi:waypoint x="2315" y="210"/>
+                <omgdi:waypoint x="1955" y="210"/>
+                <omgdi:waypoint x="1955" y="230"/>
             </bpmndi:BPMNEdge>
             <bpmndi:BPMNEdge id="flujoVerificarRiesgoExterno_di" bpmnElement="flujoVerificarRiesgoExterno">
                 <omgdi:waypoint x="1955" y="310"/>
@@ -594,9 +805,28 @@
                 <omgdi:waypoint x="2190" y="420"/>
                 <omgdi:waypoint x="2230" y="420"/>
             </bpmndi:BPMNEdge>
-            <bpmndi:BPMNEdge id="flujoRegistrarResultado_di" bpmnElement="flujoRegistrarResultado">
-                <omgdi:waypoint x="2360" y="420"/>
-                <omgdi:waypoint x="2410" y="420"/>
+            <bpmndi:BPMNEdge id="flujoEsperaResultadoEjecucion_di" bpmnElement="flujoEsperaResultadoEjecucion">
+                <omgdi:waypoint x="2266" y="420"/>
+                <omgdi:waypoint x="2300" y="420"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoEjecucionConfirmada_di" bpmnElement="flujoEjecucionConfirmada">
+                <omgdi:waypoint x="2350" y="420"/>
+                <omgdi:waypoint x="2350" y="360"/>
+                <omgdi:waypoint x="2390" y="360"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoResultadoDesconocido_di" bpmnElement="flujoResultadoDesconocido">
+                <omgdi:waypoint x="2350" y="420"/>
+                <omgdi:waypoint x="2350" y="520"/>
+                <omgdi:waypoint x="2390" y="520"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoMarcarEjecutada_di" bpmnElement="flujoMarcarEjecutada">
+                <omgdi:waypoint x="2520" y="360"/>
+                <omgdi:waypoint x="2570" y="360"/>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge id="flujoMarcarResultadoDesconocido_di"
+                             bpmnElement="flujoMarcarResultadoDesconocido">
+                <omgdi:waypoint x="2520" y="520"/>
+                <omgdi:waypoint x="2570" y="520"/>
             </bpmndi:BPMNEdge>
             <bpmndi:BPMNEdge id="flujoRechazo_di" bpmnElement="flujoRechazo">
                 <omgdi:waypoint x="1550" y="1040"/>
@@ -652,6 +882,25 @@
             <bpmndi:BPMNEdge id="flujoFinReasignacionRiesgos_di" bpmnElement="flujoFinReasignacionRiesgos">
                 <omgdi:waypoint x="1180" y="900"/>
                 <omgdi:waypoint x="1198" y="930"/>
+            </bpmndi:BPMNEdge>
+
+            <bpmndi:BPMNShape id="subprocesoCancelacion_di"
+                              bpmnElement="subprocesoCancelacion"
+                              isExpanded="true">
+                <omgdc:Bounds x="120" y="1140" width="420" height="160"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="inicioCancelacion_di"
+                              bpmnElement="inicioCancelacion">
+                <omgdc:Bounds x="170" y="1202" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape id="finCancelacion_di"
+                              bpmnElement="finCancelacion">
+                <omgdc:Bounds x="450" y="1202" width="36" height="36"/>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNEdge id="flujoCancelacion_di"
+                             bpmnElement="flujoCancelacion">
+                <omgdi:waypoint x="206" y="1220"/>
+                <omgdi:waypoint x="450" y="1220"/>
             </bpmndi:BPMNEdge>
 
         </bpmndi:BPMNPlane>

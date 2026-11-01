@@ -3,6 +3,7 @@ package com.workflow.financiero.aplicacion.servicio;
 import com.workflow.financiero.dominio.estado.ContextoTransicion;
 import com.workflow.financiero.dominio.estado.EstadoRevision;
 import com.workflow.financiero.dominio.evento.TipoEventoSolicitud;
+import com.workflow.financiero.dominio.modelo.EvaluacionRiesgo;
 import com.workflow.financiero.dominio.modelo.RevisionSolicitud;
 import com.workflow.financiero.dominio.modelo.SolicitudFinanciera;
 import com.workflow.financiero.dominio.regla.aprobacion.ContextoAprobacion;
@@ -27,6 +28,7 @@ public class ServicioPreparacionRevision {
     private final CalculadoraPlanAprobacion calculadoraPlan;
     private final ServicioEventoSolicitud servicioEvento;
     private final ServicioInicioProceso servicioInicioProceso;
+    private final ServicioSolicitudRiesgoExterno servicioSolicitudRiesgo;
 
     @Transactional
     public PreparacionRevision preparar(
@@ -76,6 +78,9 @@ public class ServicioPreparacionRevision {
         );
 
         if (riesgo.requiereEvaluacionExterna()) {
+            EvaluacionRiesgo evaluacion =
+                servicioSolicitudRiesgo.registrarIntencion(
+                    solicitud, evaluando, correlacion);
             servicioEvento.registrar(
                 solicitud,
                 evaluando,
@@ -85,7 +90,8 @@ public class ServicioPreparacionRevision {
                 null,
                 null,
                 correlacion,
-                "Evaluación externa pendiente por monto superior a 200000000"
+                "Evaluación externa pendiente; clave "
+                    + evaluacion.getClave()
             );
         }
 

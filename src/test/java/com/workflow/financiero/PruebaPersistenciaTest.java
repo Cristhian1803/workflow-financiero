@@ -537,12 +537,15 @@ class PruebaPersistenciaTest extends PruebaIntegracionBase {
         jdbcTemplate.update(
             "INSERT INTO evento_externo ("
                 + "evenexte_id, evenexte_proveedor, evenexte_identificador_evento, "
+                + "evenexte_identificador_solicitud, evenexte_numero_revision, "
                 + "evenexte_solifina_id, evenexte_revisoli_id, evenexte_huella, "
                 + "evenexte_estado, evenexte_recibido_en) "
-                + "VALUES (?, ?, ?, CAST(? AS UUID), CAST(? AS UUID), ?, 'RECIBIDO', ?)",
+                + "VALUES (?, ?, ?, CAST(? AS UUID), 1, CAST(? AS UUID), "
+                + "CAST(? AS UUID), ?, 'PENDIENTE', ?)",
             id,
             proveedor,
             identificadorEvento,
+            solicitudId == null ? UUID.randomUUID() : solicitudId,
             solicitudId,
             revisionId,
             "huella-" + id,
@@ -608,7 +611,7 @@ class PruebaPersistenciaTest extends PruebaIntegracionBase {
                 + "inteejec_id, inteejec_revisoli_id, inteejec_clave, inteejec_huella, "
                 + "inteejec_estado, inteejec_referencia_externa, inteejec_version, "
                 + "inteejec_creado_en, inteejec_actualizado_en) "
-                + "VALUES (?, ?, ?, ?, 'PENDIENTE_ENVIO', CAST(? AS VARCHAR), 0, ?, "
+                + "VALUES (?, ?, ?, ?, 'PENDIENTE', CAST(? AS VARCHAR), 0, ?, "
                 + "CAST(? AS TIMESTAMP WITH TIME ZONE))",
             id,
             revisionId,

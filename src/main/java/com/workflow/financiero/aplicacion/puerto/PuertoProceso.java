@@ -23,5 +23,7 @@ public interface PuertoProceso {
 
     boolean estaFinalizado(String idProceso);
 
+    boolean esperaMensaje(String nombreMensaje, String idProceso);
+
     void enviarMensaje(String nombreMensaje, String idProceso, Map<String, Object> variables);
 }

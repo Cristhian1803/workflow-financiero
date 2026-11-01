@@ -29,16 +29,71 @@ Cada rama tiene su propia variable de decisión: `decisionSupervisor`, `decision
 6. Cada tarea humana puede aprobar o rechazar. Un rechazo pasa por `registrarRechazo` y
    termina la instancia con `terminateAll=true`.
 7. Las aprobaciones se unen en una compuerta inclusiva y luego se verifica la autorización.
-8. Si el monto requiere evaluación externa, espera el mensaje `RIESGO_EVALUADO`. El fixture
-   de pruebas envía `riesgoExternoResuelto=true` y `nivelRiesgoExterno`; el delegate registra
-   `EVALUACION_EXTERNA_RESUELTA` y solo entonces permite continuar. El nivel externo no puede
-   ser menor que el riesgo interno.
-9. Marca la revisión como `APROBADA`, prepara la ejecución controlada y registra el
-   resultado simulado. La operación financiera real no se confirma aun.
+8. Si el monto requiere evaluación externa, el proceso entra en un gateway de eventos que
+   compite entre el mensaje `RIESGO_EVALUADO` y el timer `vencerRiesgoExterno`. La
+   aplicación guarda el evento firmado en el inbox, consolida el máximo entre riesgo interno
+   y externo y envía el mensaje a la instancia específica. El delegate lee la evaluación
+   persistida, verifica el evento aplicado y solo entonces permite continuar. Un evento
+   temprano queda pendiente y se reintenta; uno de una revisión anterior, cancelada, en
+   revisión manual o terminal queda obsoleto. El evento no crea ni modifica aprobaciones.
+   Si vence el timer, la evaluación externa pendiente queda `VENCIDA`, la revisión pasa a
+   `REVISION_MANUAL` y se abre `tareaRevisionRiesgoManual`.
+9. Marca la revisión como `APROBADA`, persiste la intención de ejecución y la deja
+   en `EJECUTANDO`. El proceso espera el mensaje `EJECUCION_FINALIZADA`.
+10. El trabajador de ejecución reclama la intención, reserva y confirma contra el
+    proveedor simulado fuera de la transacción y envía el resultado. La compuerta
+    `decidirResultadoEjecucion` distingue el resultado confirmado del desconocido:
+    - `CONFIRMADA` pasa por `marcarEjecutada` y termina en `finProceso`;
+    - el flujo por defecto pasa por `marcarResultadoDesconocido` y termina en
+      `finResultadoDesconocido`.
+11. La cancelación se solicita por API. La aplicación cancela las tareas, registra el
+    evento y, si corresponde, libera la reserva antes de enviar
+    `CANCELACION_SOLICITADA`. El subproceso de eventos interrumpe tareas, timers y el
+    flujo principal y termina en `finCancelacion`.
 
 La espera externa se ubica después de la unión para que las tareas puedan abrirse y
-resolverse sin depender del proveedor. La integración real, los duplicados y los eventos
-tardíos son de etapas próximas.
+resolverse sin depender del proveedor. La integración simulada, los duplicados, los
+conflictos, los eventos tempranos, el vencimiento y la revisión manual están implementados.
+El timer usa la variable ISO-8601 `duracionRiesgoExterno`, configurable por ambiente.
+
+La tarea `tareaRevisionRiesgoManual` tiene grupos candidatos `ANALISTA_RIESGOS` y
+`JEFE_RIESGOS`. Un `TaskListener` copia la tarea a `tarea_revision_riesgo` cuando Flowable
+la crea. La resolución registra nivel, motivo y evidencia, consolida el riesgo y recalcula
+el plan; no crea decisiones de aprobación. Después de resolver, el proceso vuelve a
+`PENDIENTE_APROBACION` y continúa por la verificación ya existente.
+
+La espera de ejecución no llama al proveedor: el delegate solo persiste la intención y
+transiciona la revisión. El trabajador de aplicación hace la llamada externa y luego
+envía `EJECUCION_FINALIZADA`. Si el trabajador está deshabilitado, la revisión queda en
+`EJECUTANDO` con la intención `PENDIENTE`; al reiniciar, el trabajador la retoma.
+
+Cuando el resultado es incierto, el trabajador persiste `RESULTADO_DESCONOCIDO`, crea un
+incidente y consulta al proveedor con la misma clave antes de cerrar el proceso. Si la
+consulta confirma, el mensaje enviado es `CONFIRMADA` y el proceso termina en
+`finProceso`. Si no se puede resolver, el proceso termina en `finResultadoDesconocido` y
+el incidente queda abierto para el reintento operativo. La recuperación posterior puede
+actualizar la revisión a `EJECUTADA` directamente si el proceso ya terminó.
+
+## Cancelación
+
+El proceso tiene un subproceso de eventos interrumpible `subprocesoCancelacion` con el
+mensaje `CANCELACION_SOLICITADA`. La aplicación registra la cancelación y, si hay una
+reserva no confirmada, la libera antes de enviar el mensaje. Así el cierre del alcance
+BPMN no destruye la compensación: la compensación se orquesta en la aplicación y el
+subproceso solo detiene el flujo.
+
+- Si el proceso está activo y espera el mensaje, el subproceso interrumpe las tareas
+  humanas y los timers y termina en `finCancelacion`.
+- Si el proceso es de una versión anterior sin esa suscripción, el adaptador elimina la
+  instancia con un motivo controlado.
+- Si el proceso ya terminó, la cancelación no vuelve a intervenir en el motor.
+
+La cancelación no se declara antes de liberar la reserva. Si la liberación falla o el
+resultado es incierto, la revisión queda `COMPENSANDO`, el proceso sigue activo y el
+trabajador de compensación consulta o reintenta con la misma clave. El mensaje
+`CANCELACION_SOLICITADA` se envía recién cuando la liberación queda confirmada. Si la
+confirmación de ejecución gana la carrera, la revisión pasa a `EJECUTADA`, la
+compensación se rechaza y el proceso cierra por el flujo de ejecución.
 
 Cada tarea humana tiene dos temporizadores de frontera no interruptores:
 
@@ -48,8 +103,8 @@ Cada tarea humana tiene dos temporizadores de frontera no interruptores:
 | Gerente | `notificarGerente24h` | `reasignarGerente48h` |
 | Riesgos | `notificarRiesgos24h` | `reasignarRiesgos48h` |
 
-Las duraciones se reciben como variables ISO-8601 (`duracionNotificacion` y
-`duracionReasignacion`). No están fijadas en el XML.
+Las duraciones se reciben como variables ISO-8601 (`duracionNotificacion`,
+`duracionReasignacion` y `duracionRiesgoExterno`). No están fijadas en el XML.
 
 El temporizador de 24 horas crea una notificación persistida para el rol funcional. El de
 48 horas reasigna la tarea al superior configurado, conserva el rol original y no completa la
@@ -93,13 +148,14 @@ gráfica y que los diagramas existan y no estén vacíos.
 
 La API inicia el proceso al crear la solicitud, persiste el identificador de instancia en la
 revisión y sincroniza cada tarea humana con `tarea_aprobacion`. El camino sin aprobaciones
-termina en `APROBADA`; los caminos con aprobaciones quedan en `PENDIENTE_APROBACION` y la
-bandeja `GET /api/v1/tareas-aprobacion` muestra las tareas visibles para cada aprobador o
-delegado. Los endpoints `POST /api/v1/tareas-aprobacion/{id}/aprobar` y `/rechazar` registran
-la decisión y avanzan el motor en la misma transacción. Un rechazo cancela las demás tareas
-de negocio de la revisión y usa el fin de terminación del proceso para cerrar las ramas
-restantes. El reenvío no modifica el BPMN: crea una revisión y una instancia nuevas y conserva
-la anterior con su historial. El temporizador de 24 horas crea una notificación persistida y
-consultable por el rol destinatario; el de 48 horas reasigna la tarea al superior configurado y
-permite resolverla por delegación. El paralelismo completo y la espera de riesgo externo están
-probados en el proceso real.
+queda en `EJECUTANDO` con la intención pendiente; los caminos con aprobaciones quedan en
+`PENDIENTE_APROBACION` y la bandeja `GET /api/v1/tareas-aprobacion` muestra las tareas visibles
+para cada aprobador o delegado. Los endpoints `POST /api/v1/tareas-aprobacion/{id}/aprobar` y
+`/rechazar` registran la decisión y avanzan el motor en la misma transacción. Un rechazo cancela
+las demás tareas de negocio de la revisión y usa el fin de terminación del proceso para cerrar
+las ramas restantes. El reenvío no modifica el BPMN: crea una revisión y una instancia nuevas y
+conserva la anterior con su historial. El temporizador de 24 horas crea una notificación
+persistida y consultable por el rol destinatario; el de 48 horas reasigna la tarea al superior
+configurado y permite resolverla por delegación. El paralelismo completo, la espera de riesgo
+externo, la ejecución idempotente simulada, el cierre por resultado desconocido y la
+cancelación con subproceso de eventos están probados en el proceso real.

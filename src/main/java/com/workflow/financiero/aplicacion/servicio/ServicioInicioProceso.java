@@ -1,6 +1,7 @@
 package com.workflow.financiero.aplicacion.servicio;
 
 import com.workflow.financiero.aplicacion.configuracion.PropiedadesAprobacion;
+import com.workflow.financiero.aplicacion.configuracion.PropiedadesRiesgoExterno;
 import com.workflow.financiero.aplicacion.puerto.PuertoProceso;
 import com.workflow.financiero.dominio.estado.EstadoRevision;
 import com.workflow.financiero.dominio.evento.TipoEventoSolicitud;
@@ -34,6 +35,7 @@ public class ServicioInicioProceso {
     private final ServicioEventoSolicitud servicioEvento;
     private final PuertoProceso puertoProceso;
     private final PropiedadesAprobacion propiedadesAprobacion;
+    private final PropiedadesRiesgoExterno propiedadesRiesgoExterno;
     private final SincronizadorTareasAprobacion sincronizadorTareas;
 
     public ServicioInicioProceso(
@@ -43,6 +45,7 @@ public class ServicioInicioProceso {
         ServicioEventoSolicitud servicioEvento,
         PuertoProceso puertoProceso,
         PropiedadesAprobacion propiedadesAprobacion,
+        PropiedadesRiesgoExterno propiedadesRiesgoExterno,
         SincronizadorTareasAprobacion sincronizadorTareas
     ) {
         this.solicitudRepositorio = solicitudRepositorio;
@@ -51,6 +54,7 @@ public class ServicioInicioProceso {
         this.servicioEvento = servicioEvento;
         this.puertoProceso = puertoProceso;
         this.propiedadesAprobacion = propiedadesAprobacion;
+        this.propiedadesRiesgoExterno = propiedadesRiesgoExterno;
         this.sincronizadorTareas = sincronizadorTareas;
     }
 
@@ -151,6 +155,9 @@ public class ServicioInicioProceso {
         variables.put(
             "duracionReasignacion",
             propiedadesAprobacion.reasignacion().toString());
+        variables.put(
+            "duracionRiesgoExterno",
+            propiedadesRiesgoExterno.vencimiento().toString());
         variables.put("correlacion", correlacion == null ? "" : correlacion);
         return variables;
     }

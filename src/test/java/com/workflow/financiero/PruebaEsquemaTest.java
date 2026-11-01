@@ -37,12 +37,15 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         tablas.put("evento_solicitud", "evensoli");
         tablas.put("registro_actor_rol", "regiactorol");
         tablas.put("tarea_aprobacion", "tareapro");
+        tablas.put("tarea_revision_riesgo", "tarereviries");
         tablas.put("decision_aprobacion", "deciapro");
         tablas.put("evaluacion_riesgo", "evalries");
         tablas.put("intento_ejecucion", "inteejec");
         tablas.put("evento_externo", "evenexte");
         tablas.put("notificacion", "noti");
         tablas.put("registro_idempotencia", "regiidem");
+        tablas.put("operacion_simulada", "opersimu");
+        tablas.put("incidente", "inci");
 
         tablas.forEach((tabla, prefijo) -> {
             List<String> columnas = columnas(tabla);
@@ -113,6 +116,7 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new Restriccion("fk_decision_actor", "f"),
             new Restriccion("fk_evaluacion_revision", "f"),
             new Restriccion("fk_intento_revision", "f"),
+            new Restriccion("fk_intento_cancelacion_actor", "f"),
             new Restriccion("fk_evento_externo_solicitud", "f"),
             new Restriccion("fk_evento_externo_revision", "f"),
             new Restriccion("fk_evento_externo_revision_solicitud", "f"),
@@ -124,8 +128,40 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new Restriccion("ck_decision_tipo", "c"),
             new Restriccion("ck_evaluacion_origen", "c"),
             new Restriccion("ck_evaluacion_nivel", "c"),
+            new Restriccion("ck_evaluacion_estado", "c"),
+            new Restriccion("ck_evento_externo_estado", "c"),
+            new Restriccion("ck_evento_externo_nivel", "c"),
             new Restriccion("ck_notificacion_estado", "c"),
-            new Restriccion("ck_notificacion_destinatario", "c")
+            new Restriccion("ck_notificacion_destinatario", "c"),
+            new Restriccion("pk_operacion_simulada", "p"),
+            new Restriccion("uq_operacion_simulada_clave", "u"),
+            new Restriccion("uq_operacion_simulada_intencion_accion", "u"),
+            new Restriccion("ck_operacion_simulada_accion", "c"),
+            new Restriccion("ck_operacion_simulada_estado", "c"),
+            new Restriccion("ck_operacion_simulada_monto", "c"),
+            new Restriccion("ck_intento_ejecucion_estado", "c"),
+            new Restriccion("pk_incidente", "p"),
+            new Restriccion("uq_incidente_causa", "u"),
+            new Restriccion("fk_incidente_solicitud", "f"),
+            new Restriccion("fk_incidente_revision", "f"),
+            new Restriccion("fk_incidente_revision_solicitud", "f"),
+            new Restriccion("fk_incidente_actor", "f"),
+            new Restriccion("ck_incidente_tipo", "c"),
+            new Restriccion("ck_incidente_estado", "c"),
+            new Restriccion("pk_intento_compensacion", "p"),
+            new Restriccion("uq_intento_compensacion_revision", "u"),
+            new Restriccion("uq_intento_compensacion_clave", "u"),
+            new Restriccion("ck_intento_compensacion_estado", "c"),
+            new Restriccion("fk_intento_compensacion_solicitud", "f"),
+            new Restriccion("fk_intento_compensacion_revision", "f"),
+            new Restriccion("fk_intento_compensacion_actor", "f"),
+            new Restriccion("pk_tarea_revision_riesgo", "p"),
+            new Restriccion("uq_tarea_revision_riesgo_revision", "u"),
+            new Restriccion("uq_tarea_revision_riesgo_motor", "u"),
+            new Restriccion("fk_tarea_revision_riesgo_revision", "f"),
+            new Restriccion("fk_tarea_revision_riesgo_actor", "f"),
+            new Restriccion("ck_tarea_revision_riesgo_estado", "c"),
+            new Restriccion("ck_tarea_revision_riesgo_nivel", "c")
         );
 
         restricciones.forEach(restriccion -> {
@@ -192,13 +228,34 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"tarea_aprobacion", "tareapro_actualizado_en"},
             new String[] {"decision_aprobacion", "deciapro_fecha"},
             new String[] {"evaluacion_riesgo", "evalries_creado_en"},
+            new String[] {"evaluacion_riesgo", "evalries_actualizado_en"},
+            new String[] {"evaluacion_riesgo", "evalries_proximo_intento_en"},
+            new String[] {"evaluacion_riesgo", "evalries_reclamado_en"},
+            new String[] {"evaluacion_riesgo", "evalries_procesado_en"},
             new String[] {"intento_ejecucion", "inteejec_creado_en"},
             new String[] {"intento_ejecucion", "inteejec_actualizado_en"},
+            new String[] {"intento_ejecucion", "inteejec_reclamado_en"},
+            new String[] {"intento_ejecucion", "inteejec_proximo_intento_en"},
             new String[] {"evento_externo", "evenexte_recibido_en"},
+            new String[] {"evento_externo", "evenexte_fecha_proveedor"},
+            new String[] {"evento_externo", "evenexte_proximo_intento_en"},
+            new String[] {"evento_externo", "evenexte_procesado_en"},
+            new String[] {"evento_externo", "evenexte_actualizado_en"},
             new String[] {"notificacion", "noti_creado_en"},
             new String[] {"notificacion", "noti_leida_en"},
             new String[] {"registro_idempotencia", "regiidem_expira_en"},
-            new String[] {"registro_idempotencia", "regiidem_creado_en"}
+            new String[] {"registro_idempotencia", "regiidem_creado_en"},
+            new String[] {"operacion_simulada", "opersimu_creado_en"},
+            new String[] {"operacion_simulada", "opersimu_actualizado_en"},
+            new String[] {"incidente", "inci_creado_en"},
+            new String[] {"incidente", "inci_actualizado_en"},
+            new String[] {"intento_compensacion", "intecomp_creado_en"},
+            new String[] {"intento_compensacion", "intecomp_actualizado_en"},
+            new String[] {"intento_compensacion", "intecomp_proximo_intento_en"},
+            new String[] {"intento_compensacion", "intecomp_reclamado_en"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_creado_en"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_actualizado_en"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_resuelto_en"}
         );
 
         instantes.forEach(par -> assertThat(tipoColumna(par[0], par[1]))
@@ -218,6 +275,23 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             "SELECT numeric_scale FROM information_schema.columns "
                 + "WHERE table_schema = ? AND table_name = 'revision_solicitud' "
                 + "AND column_name = 'revisoli_monto'",
+            Integer.class,
+            ESQUEMA
+        )).isZero();
+
+        assertThat(tipoColumna("operacion_simulada", "opersimu_monto"))
+            .isEqualTo("numeric");
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT numeric_precision FROM information_schema.columns "
+                + "WHERE table_schema = ? AND table_name = 'operacion_simulada' "
+                + "AND column_name = 'opersimu_monto'",
+            Integer.class,
+            ESQUEMA
+        )).isEqualTo(19);
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT numeric_scale FROM information_schema.columns "
+                + "WHERE table_schema = ? AND table_name = 'operacion_simulada' "
+                + "AND column_name = 'opersimu_monto'",
             Integer.class,
             ESQUEMA
         )).isZero();
@@ -252,18 +326,66 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"tarea_aprobacion", "tareapro_fecha_vencimiento"},
             new String[] {"tarea_aprobacion", "tareapro_actualizado_en"},
             new String[] {"decision_aprobacion", "deciapro_motivo"},
+            new String[] {"evaluacion_riesgo", "evalries_nivel"},
             new String[] {"evaluacion_riesgo", "evalries_resultado"},
             new String[] {"evaluacion_riesgo", "evalries_correlacion"},
+            new String[] {"evaluacion_riesgo", "evalries_clave"},
+            new String[] {"evaluacion_riesgo", "evalries_proveedor"},
+            new String[] {"evaluacion_riesgo", "evalries_identificador_evento"},
+            new String[] {"evaluacion_riesgo", "evalries_referencia_solicitud"},
+            new String[] {"evaluacion_riesgo", "evalries_proximo_intento_en"},
+            new String[] {"evaluacion_riesgo", "evalries_reclamado_en"},
+            new String[] {"evaluacion_riesgo", "evalries_reclamado_por"},
+            new String[] {"evaluacion_riesgo", "evalries_error"},
+            new String[] {"evaluacion_riesgo", "evalries_procesado_en"},
+            new String[] {"evaluacion_riesgo", "evalries_actualizado_en"},
             new String[] {"intento_ejecucion", "inteejec_referencia_externa"},
             new String[] {"intento_ejecucion", "inteejec_actualizado_en"},
+            new String[] {"intento_ejecucion", "inteejec_reclamado_en"},
+            new String[] {"intento_ejecucion", "inteejec_reclamado_por"},
+            new String[] {"intento_ejecucion", "inteejec_ultimo_error"},
+            new String[] {"intento_ejecucion", "inteejec_proximo_intento_en"},
+            new String[] {"intento_ejecucion", "inteejec_reserva_referencia"},
+            new String[] {"intento_ejecucion", "inteejec_confirmacion_referencia"},
+            new String[] {"intento_ejecucion", "inteejec_cancelacion_motivo"},
+            new String[] {"intento_ejecucion", "inteejec_cancelacion_actor_usua_id"},
+            new String[] {"intento_ejecucion", "inteejec_cancelacion_solicitada_en"},
+            new String[] {"intento_ejecucion", "inteejec_liberacion_referencia"},
             new String[] {"evento_externo", "evenexte_solifina_id"},
             new String[] {"evento_externo", "evenexte_revisoli_id"},
+            new String[] {"evento_externo", "evenexte_identificador_solicitud"},
+            new String[] {"evento_externo", "evenexte_numero_revision"},
+            new String[] {"evento_externo", "evenexte_nivel_riesgo"},
+            new String[] {"evento_externo", "evenexte_resultado"},
+            new String[] {"evento_externo", "evenexte_fecha_proveedor"},
+            new String[] {"evento_externo", "evenexte_correlacion"},
+            new String[] {"evento_externo", "evenexte_proximo_intento_en"},
+            new String[] {"evento_externo", "evenexte_error"},
+            new String[] {"evento_externo", "evenexte_procesado_en"},
+            new String[] {"evento_externo", "evenexte_actualizado_en"},
             new String[] {"notificacion", "noti_tareapro_id"},
             new String[] {"notificacion", "noti_destinatario_usua_id"},
             new String[] {"notificacion", "noti_destinatario_rol_codigo"},
             new String[] {"notificacion", "noti_leida_en"},
             new String[] {"registro_idempotencia", "regiidem_codigo_respuesta"},
-            new String[] {"registro_idempotencia", "regiidem_cuerpo_respuesta"}
+            new String[] {"registro_idempotencia", "regiidem_cuerpo_respuesta"},
+            new String[] {"operacion_simulada", "opersimu_actualizado_en"},
+            new String[] {"incidente", "inci_actor_usua_id"},
+            new String[] {"incidente", "inci_actualizado_en"},
+            new String[] {"incidente", "inci_ultimo_resultado"},
+            new String[] {"intento_compensacion", "intecomp_referencia"},
+            new String[] {"intento_compensacion", "intecomp_ultimo_error"},
+            new String[] {"intento_compensacion", "intecomp_proximo_intento_en"},
+            new String[] {"intento_compensacion", "intecomp_reclamado_en"},
+            new String[] {"intento_compensacion", "intecomp_reclamado_por"},
+            new String[] {"intento_compensacion", "intecomp_actualizado_en"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_identificador_tarea_motor"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_nivel"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_motivo"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_evidencia"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_actor_usua_id"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_actualizado_en"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_resuelto_en"}
         );
 
         opcionales.forEach(par -> assertThat(esNullable(par[0], par[1]))
@@ -274,9 +396,34 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         assertThat(esNullable("decision_aprobacion", "deciapro_decision")).isFalse();
         assertThat(esNullable("evaluacion_riesgo", "evalries_origen")).isFalse();
         assertThat(esNullable("intento_ejecucion", "inteejec_estado")).isFalse();
+        assertThat(esNullable("intento_ejecucion", "inteejec_intentos")).isFalse();
+        assertThat(tipoColumna("intento_ejecucion", "inteejec_intentos"))
+            .isEqualTo("integer");
         assertThat(esNullable("evento_externo", "evenexte_proveedor")).isFalse();
+        assertThat(esNullable("evaluacion_riesgo", "evalries_estado")).isFalse();
+        assertThat(esNullable("evaluacion_riesgo", "evalries_intentos")).isFalse();
+        assertThat(esNullable("evaluacion_riesgo", "evalries_version")).isFalse();
+        assertThat(esNullable("evento_externo", "evenexte_estado")).isFalse();
+        assertThat(esNullable("evento_externo", "evenexte_intentos")).isFalse();
+        assertThat(esNullable("evento_externo", "evenexte_conflictos")).isFalse();
+        assertThat(esNullable("evento_externo", "evenexte_version")).isFalse();
         assertThat(esNullable("notificacion", "noti_tipo")).isFalse();
         assertThat(esNullable("registro_idempotencia", "regiidem_clave")).isFalse();
+        assertThat(esNullable("operacion_simulada", "opersimu_clave")).isFalse();
+        assertThat(esNullable("operacion_simulada", "opersimu_monto")).isFalse();
+        assertThat(esNullable("incidente", "inci_tipo")).isFalse();
+        assertThat(esNullable("incidente", "inci_estado")).isFalse();
+        assertThat(esNullable("incidente", "inci_motivo")).isFalse();
+        assertThat(esNullable("incidente", "inci_reintentable")).isFalse();
+        assertThat(esNullable("incidente", "inci_reintentos")).isFalse();
+        assertThat(tipoColumna("incidente", "inci_reintentos"))
+            .isEqualTo("integer");
+        assertThat(esNullable("tarea_revision_riesgo", "tarereviries_estado"))
+            .isFalse();
+        assertThat(esNullable("tarea_revision_riesgo", "tarereviries_version"))
+            .isFalse();
+        assertThat(esNullable("tarea_revision_riesgo", "tarereviries_creado_en"))
+            .isFalse();
     }
 
     @Test
@@ -295,7 +442,18 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             "idx_notificacion_rol",
             "idx_notificacion_estado",
             "idx_idempotencia_expira",
-            "uq_revision_proceso"
+            "uq_revision_proceso",
+            "idx_operacion_simulada_intencion",
+            "idx_intento_reclamacion",
+            "idx_incidente_estado",
+            "idx_incidente_revision",
+            "idx_incidente_referencia",
+            "idx_intento_recuperacion",
+            "uq_evaluacion_externa_vigente",
+            "uq_evaluacion_manual_vigente",
+            "idx_evaluacion_externa_reclamable",
+            "idx_evento_externo_pendiente",
+            "idx_tarea_revision_riesgo_estado"
         );
 
         indices.forEach(indice -> assertThat(contarIndice(indice))
@@ -311,6 +469,26 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         assertThat(indice).contains("revisoli_identificador_proceso");
         assertThat(indice).containsIgnoringCase("WHERE");
         assertThat(indice).containsIgnoringCase("IS NOT NULL");
+    }
+
+    @Test
+    @DisplayName("Solo existe una evaluación externa vigente por revisión")
+    void indiceUnicoParcialDeEvaluacionExternaEstaDefinido() {
+        String indice = definicionIndice("uq_evaluacion_externa_vigente");
+        assertThat(indice).containsIgnoringCase("CREATE UNIQUE INDEX");
+        assertThat(indice).contains("evalries_revisoli_id");
+        assertThat(indice).containsIgnoringCase("WHERE");
+        assertThat(indice).contains("EXTERNO", "PENDIENTE", "RECIBIDA");
+    }
+
+    @Test
+    @DisplayName("Solo existe una evaluación manual vigente por revisión")
+    void indiceUnicoParcialDeEvaluacionManualEstaDefinido() {
+        String indice = definicionIndice("uq_evaluacion_manual_vigente");
+        assertThat(indice).containsIgnoringCase("CREATE UNIQUE INDEX");
+        assertThat(indice).contains("evalries_revisoli_id");
+        assertThat(indice).containsIgnoringCase("WHERE");
+        assertThat(indice).contains("MANUAL");
     }
 
     @Test
@@ -344,13 +522,73 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             .contains("PENDIENTE", "LEIDA");
         assertThat(definicionRestriccion("ck_notificacion_destinatario"))
             .contains("noti_destinatario_usua_id", "noti_destinatario_rol_codigo", "OR");
+        assertThat(definicionRestriccion("ck_operacion_simulada_accion"))
+            .contains("RESERVA", "CONFIRMACION", "LIBERACION");
+        assertThat(definicionRestriccion("ck_operacion_simulada_estado"))
+            .contains("RESERVADA", "CONFIRMADA", "LIBERADA");
+        assertThat(definicionRestriccion("ck_intento_ejecucion_estado"))
+            .contains(
+                "PENDIENTE",
+                "ENVIANDO",
+                "CONFIRMADA",
+                "RESULTADO_DESCONOCIDO",
+                "FALLIDA",
+                "COMPENSANDO",
+                "COMPENSADA",
+                "CANCELADA"
+            );
+        assertThat(definicionRestriccion("ck_intento_compensacion_estado"))
+            .contains(
+                "PENDIENTE",
+                "LIBERANDO",
+                "LIBERADA",
+                "CANCELADA",
+                "RECHAZADA",
+                "FALLIDA",
+                "REVISION_MANUAL"
+            );
+        assertThat(definicionRestriccion("ck_evaluacion_estado"))
+            .contains(
+                "PENDIENTE",
+                "RECIBIDA",
+                "VENCIDA",
+                "MANUAL",
+                "OBSOLETA"
+            );
+        assertThat(definicionRestriccion("ck_evento_externo_estado"))
+            .contains(
+                "PENDIENTE",
+                "PROCESADO",
+                "DUPLICADO",
+                "CONFLICTO",
+                "OBSOLETO"
+            );
+        assertThat(definicionRestriccion("ck_evento_externo_nivel"))
+            .contains("BAJO", "MEDIO", "ALTO");
+        assertThat(definicionRestriccion("ck_tarea_revision_riesgo_estado"))
+            .contains("PENDIENTE", "RESUELTA", "CANCELADA");
+        assertThat(definicionRestriccion("ck_tarea_revision_riesgo_nivel"))
+            .contains("BAJO", "MEDIO", "ALTO");
+        assertThat(definicionRestriccion("ck_incidente_tipo"))
+            .contains("EJECUCION", "COMPENSACION", "RIESGO_EXTERNO");
+        assertThat(definicionRestriccion("ck_incidente_estado"))
+            .contains("ABIERTO", "REINTENTANDO", "RESUELTO", "CERRADO");
     }
 
     @Test
-    @DisplayName("Los estados de ejecución y evento externo todavía no tienen check")
-    void estadosFuturosNoTienenCheckTodavia() {
-        assertThat(contarChecks("intento_ejecucion")).isZero();
-        assertThat(contarChecks("evento_externo")).isZero();
+    @DisplayName("El simulador no depende de FKs de las tablas de negocio")
+    void simuladorNoTieneFksDeNegocio() {
+        assertThat(contarFks("operacion_simulada")).isZero();
+    }
+
+    @Test
+    @DisplayName("Las intenciones y el inbox tienen sus checks de estado")
+    void estadosDeEjecucionYEventoExterno() {
+        assertThat(contarChecks("intento_ejecucion")).isEqualTo(1L);
+        assertThat(contarChecks("evaluacion_riesgo")).isEqualTo(3L);
+        assertThat(contarChecks("evento_externo")).isEqualTo(2L);
+        assertThat(contarChecks("incidente")).isEqualTo(2L);
+        assertThat(contarChecks("tarea_revision_riesgo")).isEqualTo(2L);
     }
 
     private List<String> columnas(String tabla) {
@@ -424,6 +662,15 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         return jdbcTemplate.queryForObject(
             "SELECT COUNT(*) FROM pg_constraint "
                 + "WHERE conrelid = to_regclass(?) AND contype = 'c'",
+            Long.class,
+            tabla
+        );
+    }
+
+    private Long contarFks(String tabla) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM pg_constraint "
+                + "WHERE conrelid = to_regclass(?) AND contype = 'f'",
             Long.class,
             tabla
         );

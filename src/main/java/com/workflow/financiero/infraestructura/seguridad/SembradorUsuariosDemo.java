@@ -38,6 +38,11 @@ public class SembradorUsuariosDemo implements ApplicationRunner {
         new UsuarioDemo("riesgos", "Riesgos", "RIESGOS"),
         new UsuarioDemo("gerente_general", "Gerente general", "GERENTE_GENERAL"),
         new UsuarioDemo("jefe_riesgos", "Jefe de riesgos", "JEFE_RIESGOS"),
+        new UsuarioDemo(
+            "analista_riesgos",
+            "Analista de riesgos",
+            "ANALISTA_RIESGOS"
+        ),
         new UsuarioDemo("operaciones", "Operaciones", "OPERACIONES")
     );
 

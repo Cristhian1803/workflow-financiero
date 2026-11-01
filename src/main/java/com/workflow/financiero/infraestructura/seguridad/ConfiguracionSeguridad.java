@@ -71,6 +71,12 @@ public class ConfiguracionSeguridad {
                     HttpMethod.POST,
                     "/api/v1/autenticacion/iniciar-sesion"
                 ).permitAll();
+                // La notificación externa se autentica con su propia firma
+                // HMAC, no con el token de un usuario.
+                autorizacion.requestMatchers(
+                    HttpMethod.POST,
+                    "/api/v1/integraciones/riesgos/notificacion"
+                ).permitAll();
 
                 if (documentacionPublica) {
                     autorizacion.requestMatchers(
@@ -78,6 +84,11 @@ public class ConfiguracionSeguridad {
                         "/v3/api-docs/**",
                         "/swagger-ui/**",
                         "/swagger-ui.html"
+                    ).permitAll();
+                    // El simulador valida su propia clave de integración; sus
+                    // rutas no existen fuera de desarrollo y pruebas.
+                    autorizacion.requestMatchers(
+                        "/api/v1/integraciones/proveedor-financiero/**"
                     ).permitAll();
                 }
 
@@ -88,6 +99,10 @@ public class ConfiguracionSeguridad {
                     "/api/v1/solicitudes"
                 ).hasRole("SOLICITANTE");
                 autorizacion.requestMatchers(
+                    HttpMethod.POST,
+                    "/api/v1/solicitudes/*/cancelar"
+                ).hasAnyRole("SOLICITANTE", "ADMINISTRADOR");
+                autorizacion.requestMatchers(
                     HttpMethod.GET,
                     "/api/v1/tareas-aprobacion"
                 ).hasAnyRole(ROLES_APROBACION);
@@ -96,6 +111,17 @@ public class ConfiguracionSeguridad {
                     "/api/v1/tareas-aprobacion/*/aprobar",
                     "/api/v1/tareas-aprobacion/*/rechazar"
                 ).hasAnyRole(ROLES_APROBACION);
+                autorizacion.requestMatchers(
+                    HttpMethod.GET,
+                    "/api/v1/tareas-revision-riesgo"
+                ).hasAnyRole("ANALISTA_RIESGOS", "JEFE_RIESGOS");
+                autorizacion.requestMatchers(
+                    HttpMethod.POST,
+                    "/api/v1/tareas-revision-riesgo/*/resolver"
+                ).hasAnyRole("ANALISTA_RIESGOS", "JEFE_RIESGOS");
+                autorizacion.requestMatchers(
+                    "/api/v1/incidentes/**"
+                ).hasAnyRole("OPERACIONES", "ADMINISTRADOR");
                 autorizacion.anyRequest().authenticated();
             })
             .oauth2ResourceServer(oauth2 -> oauth2

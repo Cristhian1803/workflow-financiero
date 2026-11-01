@@ -33,6 +33,28 @@ flujo:
       SUPERVISOR: GERENTE
       GERENTE: GERENTE_GENERAL
       RIESGOS: JEFE_RIESGOS
+  riesgo-externo:
+    proveedor: ${RIESGO_EXTERNO_PROVEEDOR:proveedor-riesgo-simulado}
+    secreto: ${RIESGO_EXTERNO_SECRETO:}
+    ventana-tiempo: ${RIESGO_EXTERNO_VENTANA_TIEMPO:PT5M}
+    vencimiento: ${RIESGO_EXTERNO_VENCIMIENTO:PT24H}
+    reintento: ${RIESGO_EXTERNO_REINTENTO:PT5S}
+    maximo-intentos: ${RIESGO_EXTERNO_MAXIMO_INTENTOS:3}
+
+integracion:
+  proveedor-financiero:
+    url-base: ${PROVEEDOR_FINANCIERO_URL:http://localhost:8080/api/v1/integraciones/proveedor-financiero}
+    tiempo-conexion: ${PROVEEDOR_FINANCIERO_TIEMPO_CONEXION:PT2S}
+    tiempo-lectura: ${PROVEEDOR_FINANCIERO_TIEMPO_LECTURA:PT5S}
+    secreto: ${PROVEEDOR_FINANCIERO_SECRETO:}
+
+ejecucion:
+  trabajador:
+    habilitado: ${EJECUCION_TRABAJADOR_HABILITADO:false}
+    intervalo-ms: ${EJECUCION_TRABAJADOR_INTERVALO_MS:2000}
+    max-intentos: ${EJECUCION_TRABAJADOR_MAX_INTENTOS:3}
+    reclamacion-vencida: ${EJECUCION_TRABAJADOR_RECLAMACION_VENCIDA:PT30S}
+    reintento-espera: ${EJECUCION_TRABAJADOR_REINTENTO_ESPERA:PT5S}
 
 seguridad:
   jwt:

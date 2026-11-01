@@ -5,5 +5,6 @@ package com.workflow.financiero.dominio.regla.riesgo;
  */
 public enum OrigenRiesgo {
     INTERNO,
-    EXTERNO
+    EXTERNO,
+    MANUAL
 }

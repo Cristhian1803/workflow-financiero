@@ -14,9 +14,7 @@ import com.workflow.financiero.aplicacion.servicio.TareaProceso;
 import com.workflow.financiero.aplicacion.servicio.UsuarioActual;
 import com.workflow.financiero.dominio.estado.EstadoRevision;
 import com.workflow.financiero.dominio.excepcion.ErrorSimuladoPrueba;
-import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada;
-import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada.ObservacionEjecucion;
-import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada.TipoObservacion;
+import com.workflow.financiero.infraestructura.ejecucion.TrabajadorEjecucion;
 import com.workflow.financiero.infraestructura.seguridad.SembradorUsuariosDemo;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -34,6 +32,8 @@ import org.flowable.bpmn.model.BoundaryEvent;
 import org.flowable.bpmn.model.BpmnModel;
 import org.flowable.bpmn.model.EndEvent;
 import org.flowable.bpmn.model.EventDefinition;
+import org.flowable.bpmn.model.EventGateway;
+import org.flowable.bpmn.model.EventSubProcess;
 import org.flowable.bpmn.model.ExclusiveGateway;
 import org.flowable.bpmn.model.FlowElement;
 import org.flowable.bpmn.model.FlowNode;
@@ -44,6 +44,7 @@ import org.flowable.bpmn.model.MessageEventDefinition;
 import org.flowable.bpmn.model.Process;
 import org.flowable.bpmn.model.SequenceFlow;
 import org.flowable.bpmn.model.ServiceTask;
+import org.flowable.bpmn.model.StartEvent;
 import org.flowable.bpmn.model.TerminateEventDefinition;
 import org.flowable.bpmn.model.TimerEventDefinition;
 import org.flowable.bpmn.model.UserTask;
@@ -114,7 +115,10 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
     ServicioInicioProceso servicioInicioProceso;
 
     @Autowired
-    AdaptadorEjecucionControlada adaptadorEjecucion;
+    TrabajadorEjecucion trabajadorEjecucion;
+
+    @Autowired
+    ProveedorFinancieroSimuladoDirecto proveedorDirecto;
 
     @Autowired
     SembradorUsuariosDemo sembrador;
@@ -123,18 +127,22 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
     void preparar() {
         limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
+        jdbcTemplate.execute("TRUNCATE TABLE operacion_simulada");
+        proveedorDirecto.reiniciar();
         sembrador.sembrar();
         jdbcTemplate.update(
             "UPDATE usuario SET usua_activo = TRUE "
                 + "WHERE usua_usuario IN ('demo', 'demo2', 'auditor', 'admin', "
                 + "'supervisor', 'gerente', 'riesgos', 'gerente_general', "
-                + "'jefe_riesgos', 'operaciones')");
+                + "'jefe_riesgos', 'analista_riesgos', 'operaciones')");
     }
 
     @AfterEach
     void limpiar() {
         limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
+        jdbcTemplate.execute("TRUNCATE TABLE operacion_simulada");
+        proveedorDirecto.reiniciar();
     }
 
     @Test
@@ -161,12 +169,29 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(proceso.getFlowElement("marcarPendienteAprobacion")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("verificarAutorizacion")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("verificarRiesgoExterno")).isInstanceOf(ServiceTask.class);
+        assertThat(proceso.getFlowElement("prepararRevisionManual")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("marcarAprobada")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("prepararEjecucion")).isInstanceOf(ServiceTask.class);
-        assertThat(proceso.getFlowElement("registrarResultado")).isInstanceOf(ServiceTask.class);
+        assertThat(proceso.getFlowElement("esperarResultadoEjecucion"))
+            .isInstanceOf(IntermediateCatchEvent.class);
+        assertThat(proceso.getFlowElement("decidirResultadoEjecucion"))
+            .isInstanceOf(ExclusiveGateway.class);
+        assertThat(proceso.getFlowElement("marcarEjecutada")).isInstanceOf(ServiceTask.class);
+        assertThat(proceso.getFlowElement("marcarResultadoDesconocido"))
+            .isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("registrarRechazo")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("decidirAprobaciones")).isNotNull();
         assertThat(proceso.getFlowElement("decidirRiesgoExterno")).isNotNull();
+        assertThat(proceso.getFlowElement("esperarEventoRiesgoExterno"))
+            .isInstanceOf(EventGateway.class);
+        assertThat(proceso.getFlowElement("vencerRiesgoExterno"))
+            .isInstanceOf(IntermediateCatchEvent.class);
+        assertThat(proceso.getFlowElement("decidirRevisionManual"))
+            .isInstanceOf(ExclusiveGateway.class);
+        assertThat(proceso.getFlowElement("tareaRevisionRiesgoManual"))
+            .isInstanceOf(UserTask.class);
+        assertThat(proceso.getFlowElement("finRiesgoVencidoSinRevision"))
+            .isInstanceOf(EndEvent.class);
         assertThat(proceso.getFlowElement("ramasAprobacion")).isInstanceOf(InclusiveGateway.class);
         assertThat(proceso.getFlowElement("unionAprobaciones")).isInstanceOf(InclusiveGateway.class);
         assertThat(proceso.getFlowElement("tareaSupervisor")).isInstanceOf(UserTask.class);
@@ -258,6 +283,12 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
             .contains("requiereRiesgos");
         assertThat(condicion(proceso, "flujoRequiereRiesgoExterno"))
             .contains("requiereEvaluacionExterna");
+        assertThat(condicion(proceso, "flujoEjecucionConfirmada"))
+            .contains("resultadoEjecucion")
+            .contains("CONFIRMADA");
+        assertThat(((ExclusiveGateway) proceso.getFlowElement(
+            "decidirResultadoEjecucion")).getDefaultFlow())
+            .isEqualTo("flujoResultadoDesconocido");
 
         Map<String, String> variablesDecision = Map.of(
             "Supervisor", "decisionSupervisor",
@@ -281,9 +312,11 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
             Map.entry("marcarPendienteAprobacion", "delegadoMarcarPendienteAprobacion"),
             Map.entry("verificarAutorizacion", "delegadoVerificarAutorizacion"),
             Map.entry("verificarRiesgoExterno", "delegadoVerificarRiesgoExterno"),
+            Map.entry("prepararRevisionManual", "delegadoPrepararRevisionManual"),
             Map.entry("marcarAprobada", "delegadoMarcarAprobada"),
             Map.entry("prepararEjecucion", "delegadoPrepararEjecucion"),
-            Map.entry("registrarResultado", "delegadoRegistrarResultado"),
+            Map.entry("marcarEjecutada", "delegadoMarcarEjecutada"),
+            Map.entry("marcarResultadoDesconocido", "delegadoMarcarResultadoDesconocido"),
             Map.entry("registrarRechazo", "delegadoRegistrarRechazo"),
             Map.entry("notificarSupervisor", "delegadoNotificarEscalamiento"),
             Map.entry("notificarGerente", "delegadoNotificarEscalamiento"),
@@ -337,6 +370,89 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
             .orElseThrow();
 
         assertThat(mensaje.getId()).isEqualTo("mensajeRiesgoEvaluado");
+    }
+
+    @Test
+    @DisplayName("El vencimiento externo compite con el mensaje y abre revisión manual")
+    void vencimientoRiesgoUsaTimerYTareaManual() {
+        Process proceso = modelo().getMainProcess();
+        EventGateway gateway = (EventGateway) proceso
+            .getFlowElement("esperarEventoRiesgoExterno");
+
+        assertThat(gateway.getOutgoingFlows())
+            .extracting(SequenceFlow::getTargetRef)
+            .containsExactlyInAnyOrder(
+                "esperarRiesgoExterno",
+                "vencerRiesgoExterno"
+            );
+
+        IntermediateCatchEvent vencimiento = (IntermediateCatchEvent) proceso
+            .getFlowElement("vencerRiesgoExterno");
+        TimerEventDefinition timer = vencimiento.getEventDefinitions().stream()
+            .filter(TimerEventDefinition.class::isInstance)
+            .map(TimerEventDefinition.class::cast)
+            .findFirst()
+            .orElseThrow();
+        assertThat(timer.getTimeDuration())
+            .isEqualTo("${duracionRiesgoExterno}");
+
+        UserTask manual = (UserTask) proceso
+            .getFlowElement("tareaRevisionRiesgoManual");
+        assertThat(manual.getCandidateGroups())
+            .containsExactlyInAnyOrder("ANALISTA_RIESGOS", "JEFE_RIESGOS");
+    }
+
+    @Test
+    @DisplayName("La espera de ejecución usa el mensaje EJECUCION_FINALIZADA")
+    void esperaEjecucionUsaElMensajeEsperado() {
+        BpmnModel modelo = modelo();
+        IntermediateCatchEvent espera = (IntermediateCatchEvent) modelo
+            .getMainProcess()
+            .getFlowElement("esperarResultadoEjecucion");
+
+        MessageEventDefinition definicionMensaje = espera.getEventDefinitions().stream()
+            .filter(MessageEventDefinition.class::isInstance)
+            .map(MessageEventDefinition.class::cast)
+            .findFirst()
+            .orElseThrow();
+        assertThat(definicionMensaje.getMessageRef())
+            .isEqualTo("EJECUCION_FINALIZADA");
+        Message mensaje = modelo.getMessages().stream()
+            .filter(candidato -> "EJECUCION_FINALIZADA".equals(candidato.getName()))
+            .findFirst()
+            .orElseThrow();
+
+        assertThat(mensaje.getId()).isEqualTo("mensajeEjecucionFinalizada");
+    }
+
+    @Test
+    @DisplayName("La cancelación usa un subproceso de eventos interrumpible")
+    void cancelacionUsaSubprocesoDeEventos() {
+        BpmnModel modelo = modelo();
+        EventSubProcess subproceso = (EventSubProcess) modelo.getMainProcess()
+            .getFlowElement("subprocesoCancelacion");
+
+        assertThat(subproceso).isNotNull();
+        StartEvent inicio = (StartEvent) subproceso
+            .getFlowElement("inicioCancelacion");
+        assertThat(inicio.isInterrupting()).isTrue();
+
+        MessageEventDefinition definicion = inicio.getEventDefinitions()
+            .stream()
+            .filter(MessageEventDefinition.class::isInstance)
+            .map(MessageEventDefinition.class::cast)
+            .findFirst()
+            .orElseThrow();
+        assertThat(definicion.getMessageRef())
+            .isEqualTo("CANCELACION_SOLICITADA");
+        assertThat(subproceso.getFlowElement("finCancelacion")).isNotNull();
+
+        Message mensaje = modelo.getMessages().stream()
+            .filter(candidato -> "CANCELACION_SOLICITADA".equals(
+                candidato.getName()))
+            .findFirst()
+            .orElseThrow();
+        assertThat(mensaje.getId()).isEqualTo("mensajeCancelacionSolicitada");
     }
 
     @Test
@@ -403,40 +519,51 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
     }
 
     @Test
-    @DisplayName("Cinco millones recorre el camino automático y termina APROBADA")
-    void caminoAutomaticoTerminaAprobada() {
+    @DisplayName("Cinco millones recorre el camino automático y espera la ejecución")
+    void caminoAutomaticoEsperaEjecucion() {
         UsuarioActual demo = servicioUsuarioActual.obtenerActual("demo");
         SolicitudDetalle creada = registrar(demo, 5_000_000);
 
-        assertThat(creada.estado()).isEqualTo(EstadoRevision.APROBADA);
+        assertThat(creada.estado()).isEqualTo(EstadoRevision.EJECUTANDO);
         String procesoId = identificadorProceso(creada.id());
         assertThat(procesoId).isNotBlank();
         assertThat(runtimeService.createProcessInstanceQuery()
             .processInstanceId(procesoId)
-            .count()).isZero();
-
-        HistoricProcessInstance historica = historyService
-            .createHistoricProcessInstanceQuery()
+            .count()).isEqualTo(1);
+        assertThat(runtimeService.createExecutionQuery()
             .processInstanceId(procesoId)
-            .singleResult();
-        assertThat(historica).isNotNull();
-        assertThat(historica.getEndTime()).isNotNull();
+            .messageEventSubscriptionName("EJECUCION_FINALIZADA")
+            .count()).isEqualTo(1);
         assertThat(taskService.createTaskQuery()
             .processInstanceId(procesoId)
             .count()).isZero();
         assertThat(contarTareasAprobacionTotales()).isZero();
+        assertThat(estadoIntento(creada.idRevision().toString()))
+            .isEqualTo("PENDIENTE");
 
         assertThat(tiposEvento(creada.id())).contains(
             "PROCESO_INICIADO",
-            "EJECUCION_PREPARADA",
-            "EJECUCION_CONTROLADA"
+            "EJECUCION_INICIADA"
         );
-        assertThat(adaptadorEjecucion.observaciones(creada.idRevision()))
-            .extracting(ObservacionEjecucion::tipo)
-            .containsExactlyInAnyOrder(
-                TipoObservacion.PREPARACION,
-                TipoObservacion.RESULTADO
-            );
+    }
+
+    @Test
+    @DisplayName("El trabajador confirma el camino automático y termina EJECUTADA")
+    void caminoAutomaticoTerminaEjecutada() {
+        UsuarioActual demo = servicioUsuarioActual.obtenerActual("demo");
+        SolicitudDetalle creada = registrar(demo, 5_000_000);
+
+        trabajadorEjecucion.ejecutarPendientes();
+
+        assertThat(creada.id()).isNotNull();
+        assertThat(estadoRevision(creada.idRevision().toString()))
+            .isEqualTo("EJECUTADA");
+        assertThat(estadoIntento(creada.idRevision().toString()))
+            .isEqualTo("CONFIRMADA");
+        assertThat(tiposEvento(creada.id())).contains(
+            "EJECUCION_INICIADA",
+            "EJECUCION_CONFIRMADA"
+        );
     }
 
     @Test
@@ -477,7 +604,7 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(tareaProceso.estado()).isEqualTo("PENDIENTE");
         assertThat(tareaProceso.fechaVencimiento()).isNotNull();
         assertThat(contarTareasAprobacionTotales()).isEqualTo(1);
-        assertThat(adaptadorEjecucion.observaciones(creada.idRevision())).isEmpty();
+        assertThat(contarIntentos(creada.idRevision().toString())).isZero();
     }
 
     @Test
@@ -486,11 +613,13 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         UsuarioActual demo = servicioUsuarioActual.obtenerActual("demo");
         SolicitudDetalle creada = registrar(demo, 5_000_000);
 
+        trabajadorEjecucion.ejecutarPendientes();
+
         EstadoProceso estado = servicioConsulta.proceso(creada.id(), demo);
 
         assertThat(estado.iniciado()).isTrue();
         assertThat(estado.finalizado()).isTrue();
-        assertThat(estado.estadoRevision()).isEqualTo(EstadoRevision.APROBADA);
+        assertThat(estado.estadoRevision()).isEqualTo(EstadoRevision.EJECUTADA);
         assertThat(estado.actividadesActivas()).isEmpty();
         assertThat(estado.tareas()).isEmpty();
         assertThat(contarTareasAprobacionTotales()).isZero();
@@ -536,6 +665,8 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(contarInstanciasProceso()).isZero();
         assertThat(contarHistoricosProceso()).isZero();
         assertThat(contarTareasAprobacionTotales()).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM intento_ejecucion", Long.class)).isZero();
     }
 
     private SolicitudDetalle registrar(UsuarioActual usuario, long monto) {
@@ -570,6 +701,30 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
             String.class,
             solicitudId
         );
+    }
+
+    private String estadoRevision(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT revisoli_estado FROM revision_solicitud "
+                + "WHERE revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    private String estadoIntento(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT inteejec_estado FROM intento_ejecucion "
+                + "WHERE inteejec_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    private Long contarIntentos(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM intento_ejecucion "
+                + "WHERE inteejec_revisoli_id = ?",
+            Long.class,
+            UUID.fromString(revisionId));
     }
 
     private Long contarSolicitudes() {

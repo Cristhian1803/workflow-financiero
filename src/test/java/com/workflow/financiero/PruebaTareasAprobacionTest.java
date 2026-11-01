@@ -15,7 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.workflow.financiero.aplicacion.configuracion.PropiedadesAprobacion;
 import com.workflow.financiero.aplicacion.puerto.PuertoProceso;
 import com.workflow.financiero.aplicacion.servicio.SincronizadorTareasAprobacion;
-import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada;
+import com.workflow.financiero.infraestructura.ejecucion.TrabajadorEjecucion;
 import com.workflow.financiero.infraestructura.seguridad.SembradorUsuariosDemo;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -86,7 +86,10 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
     PropiedadesAprobacion propiedadesAprobacion;
 
     @Autowired
-    AdaptadorEjecucionControlada adaptadorEjecucion;
+    TrabajadorEjecucion trabajadorEjecucion;
+
+    @Autowired
+    ProveedorFinancieroSimuladoDirecto proveedorDirecto;
 
     @MockitoSpyBean
     PuertoProceso puertoProceso;
@@ -95,6 +98,8 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
     void preparar() {
         limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
+        jdbcTemplate.execute("TRUNCATE TABLE operacion_simulada");
+        proveedorDirecto.reiniciar();
         sembrador.sembrar();
         activarUsuariosDemo();
         quitarSupervisorDemo();
@@ -106,6 +111,8 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
         quitarSupervisorDemo();
         limpiarProcesos();
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
+        jdbcTemplate.execute("TRUNCATE TABLE operacion_simulada");
+        proveedorDirecto.reiniciar();
         activarUsuariosDemo();
     }
 
@@ -115,7 +122,7 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
         JsonNode creada = crear("demo", 5_000_000, "NORMAL");
         String solicitudId = creada.get("id").asText();
 
-        assertThat(creada.get("estado").asText()).isEqualTo("APROBADA");
+        assertThat(creada.get("estado").asText()).isEqualTo("EJECUTANDO");
         assertThat(contarTareas(solicitudId)).isZero();
         assertThat(bandeja("supervisor").size()).isZero();
     }
@@ -371,8 +378,8 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
     }
 
     @Test
-    @DisplayName("Aprobar Supervisor deja la revisión APROBADA y ejecuta el proceso")
-    void aprobarSupervisorDejaRevisionAprobada() throws Exception {
+    @DisplayName("Aprobar Supervisor prepara la ejecución y el trabajador la confirma")
+    void aprobarSupervisorPreparaYConfirmaEjecucion() throws Exception {
         JsonNode creada = crear("demo", 25_000_000, "NORMAL");
         String solicitudId = creada.get("id").asText();
         String revisionId = creada.get("idRevision").asText();
@@ -387,14 +394,15 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
         assertThat(respuesta.get("idTarea").asText()).isEqualTo(tareaId);
         assertThat(respuesta.get("decision").asText()).isEqualTo("APROBADA");
         assertThat(respuesta.get("estadoTarea").asText()).isEqualTo("APROBADA");
-        assertThat(respuesta.get("estadoRevision").asText()).isEqualTo("APROBADA");
+        assertThat(respuesta.get("estadoRevision").asText())
+            .isEqualTo("EJECUTANDO");
         assertThat(respuesta.get("delegado").asBoolean()).isFalse();
         assertThat(respuesta.get("fecha").asText()).isNotBlank();
 
         assertThat(estadoTarea(tareaId)).isEqualTo("APROBADA");
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
         assertThat(contarTareasMotorActivas(procesoId)).isZero();
-        assertThat(contarProcesosFinalizados(procesoId)).isEqualTo(1);
+        assertThat(contarProcesosFinalizados(procesoId)).isZero();
         assertThat(decision(tareaId).get("deciapro_decision"))
             .isEqualTo("APROBADA");
         assertThat(decision(tareaId).get("deciapro_motivo"))
@@ -402,12 +410,18 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
         assertThat(decision(tareaId).get("deciapro_delegado"))
             .isEqualTo(false);
         assertThat(tiposEvento(solicitudId))
-            .contains("APROBACION_REGISTRADA");
+            .contains("APROBACION_REGISTRADA", "EJECUCION_INICIADA");
         assertThat(rolRegistrado(solicitudId, "supervisor"))
             .isEqualTo("SUPERVISOR");
-        assertThat(adaptadorEjecucion.observaciones(
-            UUID.fromString(revisionId))).isNotEmpty();
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
         assertThat(bandeja("supervisor").size()).isZero();
+
+        ejecutarTrabajador();
+
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTADA");
+        assertThat(estadoIntento(revisionId)).isEqualTo("CONFIRMADA");
+        assertThat(contarProcesosFinalizados(procesoId)).isEqualTo(1);
+        assertThat(referenciaConfirmacion(revisionId)).startsWith("CONF-");
     }
 
     @Test
@@ -436,16 +450,22 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
             .andExpect(status().isOk())
             .andReturn());
 
-        assertThat(segunda.get("estadoRevision").asText()).isEqualTo("APROBADA");
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
+        assertThat(segunda.get("estadoRevision").asText())
+            .isEqualTo("EJECUTANDO");
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
         assertThat(contarTareasMotorActivas(procesoId)).isZero();
-        assertThat(contarProcesosFinalizados(procesoId)).isEqualTo(1);
+        assertThat(contarProcesosFinalizados(procesoId)).isZero();
         assertThat(rolRegistrado(solicitudId, "supervisor"))
             .isEqualTo("SUPERVISOR");
         assertThat(rolRegistrado(solicitudId, "gerente"))
             .isEqualTo("GERENTE");
-        assertThat(adaptadorEjecucion.observaciones(
-            UUID.fromString(revisionId))).isNotEmpty();
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
+
+        ejecutarTrabajador();
+
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTADA");
+        assertThat(estadoIntento(revisionId)).isEqualTo("CONFIRMADA");
+        assertThat(contarProcesosFinalizados(procesoId)).isEqualTo(1);
     }
 
     @Test
@@ -479,8 +499,7 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
         assertThat(contarRegistros(solicitudId, "supervisor")).isZero();
         assertThat(tiposEvento(solicitudId))
             .contains("RECHAZO_REGISTRADO", "TAREA_CANCELADA");
-        assertThat(adaptadorEjecucion.observaciones(
-            UUID.fromString(revisionId))).isEmpty();
+        assertThat(contarIntentos(revisionId)).isZero();
         assertThat(bandeja("gerente").size()).isZero();
     }
 
@@ -830,6 +849,34 @@ class PruebaTareasAprobacionTest extends PruebaIntegracionBase {
             Long.class,
             UUID.fromString(solicitudId),
             usuario);
+    }
+
+    private void ejecutarTrabajador() {
+        trabajadorEjecucion.ejecutarPendientes();
+    }
+
+    private String estadoIntento(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT inteejec_estado FROM intento_ejecucion "
+                + "WHERE inteejec_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    private Long contarIntentos(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM intento_ejecucion "
+                + "WHERE inteejec_revisoli_id = ?",
+            Long.class,
+            UUID.fromString(revisionId));
+    }
+
+    private String referenciaConfirmacion(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT inteejec_confirmacion_referencia FROM intento_ejecucion "
+                + "WHERE inteejec_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
     }
 
     private Long contarTareasMotorActivas(String procesoId) {

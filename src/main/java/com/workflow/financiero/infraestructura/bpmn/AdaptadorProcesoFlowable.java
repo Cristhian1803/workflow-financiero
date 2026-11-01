@@ -115,6 +115,18 @@ public class AdaptadorProcesoFlowable implements PuertoProceso {
     }
 
     @Override
+    public boolean esperaMensaje(String nombreMensaje, String idProceso) {
+        if (nombreMensaje == null || idProceso == null
+            || idProceso.isBlank()) {
+            return false;
+        }
+        return runtimeService.createExecutionQuery()
+            .processInstanceId(idProceso)
+            .messageEventSubscriptionName(nombreMensaje)
+            .count() > 0;
+    }
+
+    @Override
     public void enviarMensaje(
         String nombreMensaje,
         String idProceso,

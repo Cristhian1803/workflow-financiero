@@ -1,15 +1,24 @@
 package com.workflow.financiero.api.error;
 
+import com.workflow.financiero.aplicacion.excepcion.ConflictoProveedorFinancieroException;
 import com.workflow.financiero.aplicacion.excepcion.CredencialesInvalidasException;
 import com.workflow.financiero.dominio.excepcion.AccesoDenegadoException;
 import com.workflow.financiero.dominio.excepcion.AprobacionNoPermitidaException;
+import com.workflow.financiero.dominio.excepcion.CancelacionNoPermitidaException;
 import com.workflow.financiero.dominio.excepcion.DecisionInvalidaException;
+import com.workflow.financiero.dominio.excepcion.EjecucionNoPermitidaException;
+import com.workflow.financiero.dominio.excepcion.EventoExternoEnConflictoException;
+import com.workflow.financiero.dominio.excepcion.EventoExternoInvalidoException;
+import com.workflow.financiero.dominio.excepcion.IncidenteNoEncontradoException;
 import com.workflow.financiero.dominio.excepcion.ReenvioNoPermitidoException;
+import com.workflow.financiero.dominio.excepcion.ReintentoNoPermitidoException;
+import com.workflow.financiero.dominio.excepcion.RevisionRiesgoYaResueltaException;
 import com.workflow.financiero.dominio.excepcion.RolAprobadorInvalidoException;
 import com.workflow.financiero.dominio.excepcion.SegregacionFuncionesException;
 import com.workflow.financiero.dominio.excepcion.SolicitudInvalidaException;
 import com.workflow.financiero.dominio.excepcion.SolicitudPruebaInvalidaException;
 import com.workflow.financiero.dominio.excepcion.TareaNoEncontradaException;
+import com.workflow.financiero.dominio.excepcion.TareaRevisionRiesgoNoEncontradaException;
 import com.workflow.financiero.dominio.excepcion.TareaYaResueltaException;
 import com.workflow.financiero.dominio.excepcion.TransicionEstadoInvalidaException;
 import com.workflow.financiero.dominio.excepcion.TransicionTareaInvalidaException;
@@ -175,6 +184,30 @@ public class ManejadorErroresApi {
         );
     }
 
+    @ExceptionHandler(TareaRevisionRiesgoNoEncontradaException.class)
+    ResponseEntity<ProblemDetail> tareaRevisionNoEncontrada(
+        TareaRevisionRiesgoNoEncontradaException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.TAREA_REVISION_NO_ENCONTRADA,
+            "No se encontró la tarea de revisión de riesgo",
+            peticion
+        );
+    }
+
+    @ExceptionHandler(RevisionRiesgoYaResueltaException.class)
+    ResponseEntity<ProblemDetail> revisionRiesgoYaResuelta(
+        RevisionRiesgoYaResueltaException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.REVISION_RIESGO_YA_RESUELTA,
+            excepcion.getMessage(),
+            peticion
+        );
+    }
+
     @ExceptionHandler(TransicionTareaInvalidaException.class)
     ResponseEntity<ProblemDetail> transicionTareaInvalida(
         TransicionTareaInvalidaException excepcion,
@@ -221,6 +254,90 @@ public class ManejadorErroresApi {
     ) {
         return respuesta(
             CodigoError.REENVIO_NO_PERMITIDO,
+            excepcion.getMessage(),
+            peticion
+        );
+    }
+
+    @ExceptionHandler(IncidenteNoEncontradoException.class)
+    ResponseEntity<ProblemDetail> incidenteNoEncontrado(
+        IncidenteNoEncontradoException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.INCIDENTE_NO_ENCONTRADO,
+            "No se encontró el incidente solicitado",
+            peticion
+        );
+    }
+
+    @ExceptionHandler(ReintentoNoPermitidoException.class)
+    ResponseEntity<ProblemDetail> reintentoNoPermitido(
+        ReintentoNoPermitidoException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.REINTENTO_NO_PERMITIDO,
+            excepcion.getMessage(),
+            peticion
+        );
+    }
+
+    @ExceptionHandler(EjecucionNoPermitidaException.class)
+    ResponseEntity<ProblemDetail> ejecucionNoPermitida(
+        EjecucionNoPermitidaException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.EJECUCION_NO_PERMITIDA,
+            excepcion.getMessage(),
+            peticion
+        );
+    }
+
+    @ExceptionHandler(CancelacionNoPermitidaException.class)
+    ResponseEntity<ProblemDetail> cancelacionNoPermitida(
+        CancelacionNoPermitidaException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.CANCELACION_NO_PERMITIDA,
+            excepcion.getMessage(),
+            peticion
+        );
+    }
+
+    @ExceptionHandler(EventoExternoInvalidoException.class)
+    ResponseEntity<ProblemDetail> eventoExternoInvalido(
+        EventoExternoInvalidoException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.EVENTO_EXTERNO_INVALIDO,
+            excepcion.getMessage(),
+            peticion
+        );
+    }
+
+    @ExceptionHandler(EventoExternoEnConflictoException.class)
+    ResponseEntity<ProblemDetail> eventoExternoEnConflicto(
+        EventoExternoEnConflictoException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.EVENTO_EXTERNO_EN_CONFLICTO,
+            excepcion.getMessage(),
+            peticion
+        );
+    }
+
+    @ExceptionHandler(ConflictoProveedorFinancieroException.class)
+    ResponseEntity<ProblemDetail> conflictoProveedorFinanciero(
+        ConflictoProveedorFinancieroException excepcion,
+        HttpServletRequest peticion
+    ) {
+        return respuesta(
+            CodigoError.CONFLICTO_DATOS,
             excepcion.getMessage(),
             peticion
         );

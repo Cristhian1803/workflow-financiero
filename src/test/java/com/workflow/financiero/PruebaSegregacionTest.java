@@ -178,7 +178,7 @@ class PruebaSegregacionTest extends PruebaIntegracionBase {
         aprobar(segundaTarea, "supervisor", null)
             .andExpect(status().isOk());
 
-        assertThat(estadoRevision(revision2)).isEqualTo("APROBADA");
+        assertThat(estadoRevision(revision2)).isEqualTo("EJECUTANDO");
         assertThat(contarRegistros(solicitudId, "supervisor")).isEqualTo(1);
     }
 
@@ -394,7 +394,7 @@ class PruebaSegregacionTest extends PruebaIntegracionBase {
         aprobar(idTareaDeRevision(revision2, "SUPERVISOR"), "gerente", null)
             .andExpect(status().isOk());
 
-        assertThat(estadoRevision(revision2)).isEqualTo("APROBADA");
+        assertThat(estadoRevision(revision2)).isEqualTo("EJECUTANDO");
         assertThat(contarRegistros(solicitudId, "gerente")).isEqualTo(1);
     }
 

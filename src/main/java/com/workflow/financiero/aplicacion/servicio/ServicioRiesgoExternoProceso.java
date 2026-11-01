@@ -1,13 +1,17 @@
 package com.workflow.financiero.aplicacion.servicio;
 
+import com.workflow.financiero.dominio.estado.EstadoEvaluacionRiesgo;
 import com.workflow.financiero.dominio.estado.EstadoRevision;
-import com.workflow.financiero.dominio.estado.NivelRiesgo;
-import com.workflow.financiero.dominio.evento.TipoEventoSolicitud;
+import com.workflow.financiero.dominio.estado.EstadoTareaRevisionRiesgo;
 import com.workflow.financiero.dominio.excepcion.TransicionEstadoInvalidaException;
+import com.workflow.financiero.dominio.modelo.EvaluacionRiesgo;
 import com.workflow.financiero.dominio.modelo.RevisionSolicitud;
 import com.workflow.financiero.dominio.modelo.SolicitudFinanciera;
-import com.workflow.financiero.infraestructura.persistencia.SolicitudFinancieraRepositorio;
-import java.util.Locale;
+import com.workflow.financiero.dominio.regla.riesgo.OrigenRiesgo;
+import com.workflow.financiero.infraestructura.persistencia.EvaluacionRiesgoRepositorio;
+import com.workflow.financiero.infraestructura.persistencia.RevisionSolicitudRepositorio;
+import com.workflow.financiero.infraestructura.persistencia.TareaRevisionRiesgoRepositorio;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -15,37 +19,32 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Valida el resultado controlado del riesgo externo antes de permitir que la
- * revisión pase a APROBADA. La integración real del proveedor es posterior.
+ * Valida, dentro del delegate BPMN, que el resultado externo ya esté
+ * persistido y corresponda a la revisión que está esperando. No aplica el
+ * resultado ni crea eventos: eso ocurre en la transacción del inbox.
  */
 @Service
 @RequiredArgsConstructor
 public class ServicioRiesgoExternoProceso {
 
-    private final SolicitudFinancieraRepositorio solicitudRepositorio;
-    private final ServicioEventoSolicitud servicioEvento;
+    private final RevisionSolicitudRepositorio revisionRepositorio;
+    private final EvaluacionRiesgoRepositorio evaluacionRepositorio;
+    private final TareaRevisionRiesgoRepositorio tareaRevisionRepositorio;
 
-    @Transactional
+    @Transactional(readOnly = true)
     public void verificar(
-        UUID solicitudId,
         UUID revisionId,
-        Boolean resuelto,
-        String nivelRiesgoExterno,
+        String identificadorEvento,
         String correlacion
     ) {
-        if (!Boolean.TRUE.equals(resuelto)) {
-            throw new IllegalStateException(
-                "El riesgo externo todavía no está resuelto");
-        }
-
-        NivelRiesgo nivel = nivelValido(nivelRiesgoExterno);
-        SolicitudFinanciera solicitud = solicitudRepositorio
-            .buscarDetallePorId(solicitudId)
+        RevisionSolicitud revision = revisionRepositorio
+            .buscarDetallePorId(revisionId)
             .orElseThrow(() -> new NoSuchElementException(
-                "No existe la solicitud " + solicitudId));
+                "No existe la revisión " + revisionId));
+        SolicitudFinanciera solicitud = revision.getSolicitud();
 
-        RevisionSolicitud revision = solicitud.getRevisionActual();
-        if (revision == null || !revision.getId().equals(revisionId)) {
+        if (solicitud.getRevisionActual() == null
+            || !solicitud.getRevisionActual().getId().equals(revision.getId())) {
             throw new TransicionEstadoInvalidaException(
                 "La revisión indicada no es la actual de la solicitud");
         }
@@ -58,38 +57,50 @@ public class ServicioRiesgoExternoProceso {
             throw new TransicionEstadoInvalidaException(
                 "La revisión no tiene el riesgo interno clasificado");
         }
-        if (nivel.compareTo(revision.getNivelRiesgo()) < 0) {
-            throw new IllegalStateException(
-                "El riesgo externo " + nivel
-                    + " no puede ser menor que el riesgo interno "
-                    + revision.getNivelRiesgo());
-        }
 
-        servicioEvento.registrar(
-            solicitud,
-            revision,
-            TipoEventoSolicitud.EVALUACION_EXTERNA_RESUELTA,
-            null,
-            null,
-            null,
-            null,
-            correlacion,
-            "Riesgo externo recibido: " + nivel
-        );
+        EvaluacionRiesgo evaluacion = identificadorEvento == null
+            ? evaluacionManual(revision.getId())
+            : evaluacionExterna(revision.getId(), identificadorEvento);
+        if (evaluacion.getNivel() == null) {
+            throw new TransicionEstadoInvalidaException(
+                "La evaluación de riesgo no tiene un nivel válido");
+        }
+        if (evaluacion.getNivel().compareTo(revision.getNivelRiesgo()) > 0) {
+            throw new TransicionEstadoInvalidaException(
+                "El riesgo consolidado es menor que la evaluación aplicada");
+        }
     }
 
-    private NivelRiesgo nivelValido(String nivel) {
-        if (nivel == null || nivel.isBlank()) {
-            throw new IllegalStateException(
-                "El nivel de riesgo externo es obligatorio");
+    private EvaluacionRiesgo evaluacionExterna(
+        UUID revisionId,
+        String identificadorEvento
+    ) {
+        EvaluacionRiesgo evaluacion = evaluacionRepositorio
+            .buscarVigentePorRevision(
+                revisionId,
+                OrigenRiesgo.EXTERNO,
+                List.of(EstadoEvaluacionRiesgo.RECIBIDA))
+            .orElseThrow(() -> new TransicionEstadoInvalidaException(
+                "No existe una evaluación externa recibida para la revisión"));
+        if (!identificadorEvento.equals(evaluacion.getIdentificadorEvento())) {
+            throw new TransicionEstadoInvalidaException(
+                "El evento no corresponde a la evaluación externa aplicada");
         }
-        try {
-            return NivelRiesgo.valueOf(nivel.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException excepcion) {
-            throw new IllegalStateException(
-                "El nivel de riesgo externo no es válido: " + nivel,
-                excepcion
-            );
+        return evaluacion;
+    }
+
+    private EvaluacionRiesgo evaluacionManual(UUID revisionId) {
+        if (!tareaRevisionRepositorio.existsByRevisionIdAndEstado(
+                revisionId, EstadoTareaRevisionRiesgo.RESUELTA)) {
+            throw new TransicionEstadoInvalidaException(
+                "No existe una tarea de revisión manual resuelta");
         }
+        return evaluacionRepositorio
+            .buscarVigentePorRevision(
+                revisionId,
+                OrigenRiesgo.MANUAL,
+                List.of(EstadoEvaluacionRiesgo.MANUAL))
+            .orElseThrow(() -> new TransicionEstadoInvalidaException(
+                "No existe una evaluación manual aplicada para la revisión"));
     }
 }

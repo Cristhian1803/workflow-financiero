@@ -5,3 +5,7 @@ spring:
 
 flowable:
   async-executor-activate: true
+
+ejecucion:
+  trabajador:
+    habilitado: true

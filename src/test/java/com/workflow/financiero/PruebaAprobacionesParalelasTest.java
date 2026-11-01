@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.workflow.financiero.infraestructura.ejecucion.AdaptadorEjecucionControlada.TipoObservacion;
 import java.util.Map;
 import org.flowable.task.api.Task;
 import org.junit.jupiter.api.DisplayName;
@@ -43,16 +42,12 @@ class PruebaAprobacionesParalelasTest extends PruebaProcesoAprobacionBase {
         assertThat(rolesTareasMotor(procesoId)).isEmpty();
         assertThat(contarSuscripcionesRiesgo(procesoId)).isEqualTo(1);
 
-        enviarRiesgoExterno(procesoId, true, "ALTO");
+        notificarRiesgo(creada, "ALTO").andExpect(status().isOk());
 
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
-        assertThat(procesoFinalizado(procesoId)).isTrue();
-        assertThat(observaciones(revisionId))
-            .extracting(observacion -> observacion.tipo())
-            .containsExactlyInAnyOrder(
-                TipoObservacion.PREPARACION,
-                TipoObservacion.RESULTADO
-            );
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
+        assertThat(procesoActivo(procesoId)).isTrue();
+        assertThat(contarSuscripcionesEjecucion(procesoId)).isEqualTo(1);
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
         assertThat(tiposEvento(solicitudId))
             .contains(
                 "EVALUACION_EXTERNA_PENDIENTE",
@@ -85,16 +80,12 @@ class PruebaAprobacionesParalelasTest extends PruebaProcesoAprobacionBase {
         assertPendienteSinEjecucion(revisionId, procesoId);
         assertThat(contarSuscripcionesRiesgo(procesoId)).isEqualTo(1);
 
-        enviarRiesgoExterno(procesoId, true, "ALTO");
+        notificarRiesgo(creada, "ALTO").andExpect(status().isOk());
 
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
-        assertThat(procesoFinalizado(procesoId)).isTrue();
-        assertThat(observaciones(revisionId))
-            .extracting(observacion -> observacion.tipo())
-            .containsExactlyInAnyOrder(
-                TipoObservacion.PREPARACION,
-                TipoObservacion.RESULTADO
-            );
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
+        assertThat(procesoActivo(procesoId)).isTrue();
+        assertThat(contarSuscripcionesEjecucion(procesoId)).isEqualTo(1);
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
     }
 
     @Test
@@ -120,10 +111,12 @@ class PruebaAprobacionesParalelasTest extends PruebaProcesoAprobacionBase {
         assertPendienteSinEjecucion(revisionId, procesoId);
         assertThat(contarSuscripcionesRiesgo(procesoId)).isEqualTo(1);
 
-        enviarRiesgoExterno(procesoId, true, "ALTO");
+        notificarRiesgo(creada, "ALTO").andExpect(status().isOk());
 
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
-        assertThat(procesoFinalizado(procesoId)).isTrue();
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
+        assertThat(procesoActivo(procesoId)).isTrue();
+        assertThat(contarSuscripcionesEjecucion(procesoId)).isEqualTo(1);
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
     }
 
     @Test
@@ -165,15 +158,11 @@ class PruebaAprobacionesParalelasTest extends PruebaProcesoAprobacionBase {
         aprobar(idTareaAprobacion(solicitudId, "SUPERVISOR"), "supervisor", null)
             .andExpect(status().isOk());
 
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
-        assertThat(procesoFinalizado(procesoId)).isTrue();
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
+        assertThat(procesoActivo(procesoId)).isTrue();
         assertThat(contarSuscripcionesRiesgo(procesoId)).isZero();
-        assertThat(observaciones(revisionId))
-            .extracting(observacion -> observacion.tipo())
-            .containsExactlyInAnyOrder(
-                TipoObservacion.PREPARACION,
-                TipoObservacion.RESULTADO
-            );
+        assertThat(contarSuscripcionesEjecucion(procesoId)).isEqualTo(1);
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
     }
 
     @Test
@@ -195,14 +184,10 @@ class PruebaAprobacionesParalelasTest extends PruebaProcesoAprobacionBase {
         aprobar(idTareaAprobacion(solicitudId, "GERENTE"), "gerente", null)
             .andExpect(status().isOk());
 
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
-        assertThat(procesoFinalizado(procesoId)).isTrue();
-        assertThat(observaciones(revisionId))
-            .extracting(observacion -> observacion.tipo())
-            .containsExactlyInAnyOrder(
-                TipoObservacion.PREPARACION,
-                TipoObservacion.RESULTADO
-            );
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
+        assertThat(procesoActivo(procesoId)).isTrue();
+        assertThat(contarSuscripcionesEjecucion(procesoId)).isEqualTo(1);
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
     }
 
     @Test
@@ -224,7 +209,7 @@ class PruebaAprobacionesParalelasTest extends PruebaProcesoAprobacionBase {
         assertThat(estadoTarea(tareaGerente)).isEqualTo("CANCELADA");
         assertThat(estadoRevision(revisionId)).isEqualTo("RECHAZADA");
         assertThat(procesoFinalizado(procesoId)).isTrue();
-        assertThat(observaciones(revisionId)).isEmpty();
+        assertThat(contarIntentos(revisionId)).isZero();
         assertThat(tiposEvento(solicitudId))
             .contains("RECHAZO_REGISTRADO", "TAREA_CANCELADA");
     }
@@ -251,42 +236,13 @@ class PruebaAprobacionesParalelasTest extends PruebaProcesoAprobacionBase {
         assertThat(estadoRevision(revisionId)).isEqualTo("RECHAZADA");
         assertThat(procesoFinalizado(procesoId)).isTrue();
         assertThat(contarDecisiones(solicitudId)).isEqualTo(2);
-        assertThat(observaciones(revisionId)).isEmpty();
+        assertThat(contarIntentos(revisionId)).isZero();
         assertThat(tiposEvento(solicitudId))
             .contains(
                 "APROBACION_REGISTRADA",
                 "RECHAZO_REGISTRADO",
                 "TAREA_CANCELADA"
             );
-    }
-
-    @Test
-    @DisplayName("Un fixture inválido mantiene el proceso esperando")
-    void fixtureInvalidoMantieneLaEspera() throws Exception {
-        JsonNode creada = crear("demo", 250_000_000, "NORMAL");
-        String solicitudId = creada.get("id").asText();
-        String revisionId = creada.get("idRevision").asText();
-        String procesoId = identificadorProceso(solicitudId);
-
-        aprobar(idTareaAprobacion(solicitudId, "SUPERVISOR"), "supervisor", null)
-            .andExpect(status().isOk());
-        aprobar(idTareaAprobacion(solicitudId, "GERENTE"), "gerente", null)
-            .andExpect(status().isOk());
-        aprobar(idTareaAprobacion(solicitudId, "RIESGOS"), "riesgos", null)
-            .andExpect(status().isOk());
-
-        assertThatThrownBy(() -> enviarRiesgoExterno(procesoId, false, "ALTO"))
-            .hasStackTraceContaining("riesgo externo");
-        assertThatThrownBy(() -> enviarRiesgoExterno(procesoId, true, "BAJO"))
-            .hasStackTraceContaining("no puede ser menor");
-
-        assertPendienteSinEjecucion(revisionId, procesoId);
-        assertThat(contarSuscripcionesRiesgo(procesoId)).isEqualTo(1);
-
-        enviarRiesgoExterno(procesoId, true, "ALTO");
-
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
-        assertThat(procesoFinalizado(procesoId)).isTrue();
     }
 
     @Test
@@ -309,17 +265,7 @@ class PruebaAprobacionesParalelasTest extends PruebaProcesoAprobacionBase {
         assertThat(estadoRevision(revisionId))
             .isEqualTo("PENDIENTE_APROBACION");
         assertThat(contarDecisiones(solicitudId)).isZero();
-        assertThat(observaciones(revisionId)).isEmpty();
-    }
-
-    @Test
-    @DisplayName("Enviar el mensaje a un proceso que no lo espera falla")
-    void mensajeSinSuscripcionFalla() throws Exception {
-        JsonNode creada = crear("demo", 100_000_000, "NORMAL");
-        String procesoId = identificadorProceso(creada.get("id").asText());
-
-        assertThatThrownBy(() -> enviarRiesgoExterno(procesoId, true, "ALTO"))
-            .hasStackTraceContaining("no espera el mensaje");
+        assertThat(contarIntentos(revisionId)).isZero();
     }
 
     private void assertPendienteSinEjecucion(
@@ -329,6 +275,6 @@ class PruebaAprobacionesParalelasTest extends PruebaProcesoAprobacionBase {
         assertThat(estadoRevision(revisionId))
             .isEqualTo("PENDIENTE_APROBACION");
         assertThat(procesoActivo(procesoId)).isTrue();
-        assertThat(observaciones(revisionId)).isEmpty();
+        assertThat(contarIntentos(revisionId)).isZero();
     }
 }

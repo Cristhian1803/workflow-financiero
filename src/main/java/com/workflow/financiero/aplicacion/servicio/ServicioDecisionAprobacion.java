@@ -1,6 +1,7 @@
 package com.workflow.financiero.aplicacion.servicio;
 
 import com.workflow.financiero.aplicacion.puerto.PuertoProceso;
+import com.workflow.financiero.dominio.estado.EstadoRevision;
 import com.workflow.financiero.dominio.estado.EstadoTareaAprobacion;
 import com.workflow.financiero.dominio.evento.TipoEventoSolicitud;
 import com.workflow.financiero.dominio.excepcion.AprobacionNoPermitidaException;
@@ -187,6 +188,13 @@ public class ServicioDecisionAprobacion {
         if (tarea.getEstado() != EstadoTareaAprobacion.PENDIENTE
             || decisionRepositorio.buscarPorTarea(tareaId).isPresent()) {
             throw new TareaYaResueltaException();
+        }
+
+        // Una tarea pendiente no puede resolverse si la revisión ya fue
+        // cancelada, rechazada o ejecutada por otra transición.
+        if (revisionActual.getEstado() != EstadoRevision.PENDIENTE_APROBACION) {
+            throw new TransicionEstadoInvalidaException(
+                "La revisión no está pendiente de aprobación");
         }
 
         if (!resultado.elegible()) {

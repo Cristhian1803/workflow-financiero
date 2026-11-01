@@ -21,9 +21,36 @@ public interface TareaAprobacionRepositorio extends JpaRepository<TareaAprobacio
         """)
     Optional<UUID> buscarSolicitudIdPorTarea(@Param("tareaId") UUID tareaId);
 
+    @Query("""
+        select t.revision.solicitud.id
+        from TareaAprobacion t
+        where t.identificadorTareaMotor = :identificador
+        """)
+    Optional<UUID> buscarSolicitudIdPorIdentificadorTareaMotor(
+        @Param("identificador") String identificador);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select t from TareaAprobacion t where t.id = :tareaId")
     Optional<TareaAprobacion> buscarPorIdParaActualizar(@Param("tareaId") UUID tareaId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select t
+        from TareaAprobacion t
+        where t.identificadorTareaMotor = :identificador
+        """)
+    Optional<TareaAprobacion> buscarPorIdentificadorTareaMotorParaActualizar(
+        @Param("identificador") String identificador);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+        select t
+        from TareaAprobacion t
+        where t.revision.id = :revisionId
+        order by t.rol.codigo
+        """)
+    List<TareaAprobacion> buscarPorRevisionParaActualizar(
+        @Param("revisionId") UUID revisionId);
 
     @Query("""
         select t

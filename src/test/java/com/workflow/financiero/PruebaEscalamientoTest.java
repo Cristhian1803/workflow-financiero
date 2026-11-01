@@ -322,9 +322,12 @@ class PruebaEscalamientoTest extends PruebaProcesoAprobacionBase {
 
         assertThat(respuesta.get("delegado").asBoolean()).isTrue();
         assertThat(respuesta.get("estadoRevision").asText())
-            .isEqualTo("APROBADA");
+            .isEqualTo("EJECUTANDO");
         assertThat(estadoTarea(tareaId)).isEqualTo("APROBADA");
-        assertThat(estadoRevision(revisionId)).isEqualTo("APROBADA");
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTANDO");
+        assertThat(estadoIntento(revisionId)).isEqualTo("PENDIENTE");
+        assertThat(contarSuscripcionesEjecucion(
+            identificadorProcesoDeRevision(revisionId))).isEqualTo(1);
         assertThat(rolRegistrado(solicitudId, "gerente"))
             .isEqualTo("SUPERVISOR");
 
@@ -332,7 +335,7 @@ class PruebaEscalamientoTest extends PruebaProcesoAprobacionBase {
         assertThat(decision.get("deciapro_delegado")).isEqualTo(true);
         assertThat(decision.get("deciapro_actor_usua_id"))
             .isEqualTo(idUsuario("gerente"));
-        assertThat(observaciones(revisionId)).isNotEmpty();
+        assertThat(contarIntentos(revisionId)).isEqualTo(1);
     }
 
     @Test
