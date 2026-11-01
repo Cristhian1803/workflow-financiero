@@ -293,6 +293,56 @@ class PruebaEventosRiesgoTest extends PruebaProcesoAprobacionBase {
     }
 
     @Test
+    @DisplayName("Un evento posterior a la ejecución queda obsoleto")
+    void eventoPosteriorALaEjecucionQuedaObsoleto() throws Exception {
+        JsonNode creada = crear("demo", 250_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+        aprobarTodas(solicitudId);
+
+        notificarRiesgo(
+            solicitudId, 1, "ALTO", evento(),
+            Instant.now(), Instant.now().toString(), null)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.estado").value("PROCESADO"));
+        ejecutarTrabajador();
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTADA");
+
+        String evento = evento();
+        notificarRiesgo(
+            solicitudId, 1, "ALTO", evento,
+            Instant.now(), Instant.now().toString(), null)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.estado").value("OBSOLETO"));
+
+        assertThat(estadoEventoExterno(evento)).isEqualTo("OBSOLETO");
+        assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTADA");
+    }
+
+    @Test
+    @DisplayName("Un evento posterior a la cancelación queda obsoleto")
+    void eventoPosteriorALaCancelacionQuedaObsoleto() throws Exception {
+        JsonNode creada = crear("demo", 250_000_000, "NORMAL");
+        String solicitudId = creada.get("id").asText();
+        String revisionId = creada.get("idRevision").asText();
+        aprobarTodas(solicitudId);
+
+        cancelar(solicitudId, "demo", "Cancelación de prueba")
+            .andExpect(status().isOk());
+        assertThat(estadoRevision(revisionId)).isEqualTo("CANCELADA");
+
+        String evento = evento();
+        notificarRiesgo(
+            solicitudId, 1, "ALTO", evento,
+            Instant.now(), Instant.now().toString(), null)
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.estado").value("OBSOLETO"));
+
+        assertThat(estadoEventoExterno(evento)).isEqualTo("OBSOLETO");
+        assertThat(estadoRevision(revisionId)).isEqualTo("CANCELADA");
+    }
+
+    @Test
     @DisplayName("El endpoint rechaza niveles inválidos y campos faltantes")
     void endpointRechazaNivelInvalidoYCamposFaltantes() throws Exception {
         JsonNode creada = crear("demo", 250_000_000, "NORMAL");

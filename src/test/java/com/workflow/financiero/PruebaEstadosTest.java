@@ -67,7 +67,8 @@ class PruebaEstadosTest extends PruebaIntegracionBase {
             EstadoRevision.APROBADA,
             EstadoRevision.RECHAZADA,
             EstadoRevision.CANCELADA,
-            EstadoRevision.COMPENSANDO
+            EstadoRevision.COMPENSANDO,
+            EstadoRevision.REVISION_MANUAL
         ),
         EstadoRevision.APROBADA, Set.of(
             EstadoRevision.EJECUTANDO,
@@ -90,7 +91,10 @@ class PruebaEstadosTest extends PruebaIntegracionBase {
             EstadoRevision.EJECUTADA,
             EstadoRevision.REVISION_MANUAL
         ),
-        EstadoRevision.REVISION_MANUAL, Set.of(EstadoRevision.EVALUANDO_RIESGO)
+        EstadoRevision.REVISION_MANUAL, Set.of(
+            EstadoRevision.EVALUANDO_RIESGO,
+            EstadoRevision.CANCELADA
+        )
     );
 
     @Autowired
@@ -138,7 +142,7 @@ class PruebaEstadosTest extends PruebaIntegracionBase {
     @DisplayName("La máquina de estados define exactamente las transiciones permitidas")
     void laMaquinaDeEstadosDefineLasTransicionesPermitidas() {
         assertThat(TRANSICIONES.values().stream().mapToInt(Set::size).sum())
-            .isEqualTo(26);
+            .isEqualTo(28);
 
         TRANSICIONES.forEach((origen, destinos) -> destinos.forEach(destino ->
             assertThat(origen.puedeTransicionarA(destino))

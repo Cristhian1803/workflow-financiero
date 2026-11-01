@@ -37,6 +37,7 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         tablas.put("evento_solicitud", "evensoli");
         tablas.put("registro_actor_rol", "regiactorol");
         tablas.put("tarea_aprobacion", "tareapro");
+        tablas.put("tarea_revision_riesgo", "tarereviries");
         tablas.put("decision_aprobacion", "deciapro");
         tablas.put("evaluacion_riesgo", "evalries");
         tablas.put("intento_ejecucion", "inteejec");
@@ -153,7 +154,14 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new Restriccion("ck_intento_compensacion_estado", "c"),
             new Restriccion("fk_intento_compensacion_solicitud", "f"),
             new Restriccion("fk_intento_compensacion_revision", "f"),
-            new Restriccion("fk_intento_compensacion_actor", "f")
+            new Restriccion("fk_intento_compensacion_actor", "f"),
+            new Restriccion("pk_tarea_revision_riesgo", "p"),
+            new Restriccion("uq_tarea_revision_riesgo_revision", "u"),
+            new Restriccion("uq_tarea_revision_riesgo_motor", "u"),
+            new Restriccion("fk_tarea_revision_riesgo_revision", "f"),
+            new Restriccion("fk_tarea_revision_riesgo_actor", "f"),
+            new Restriccion("ck_tarea_revision_riesgo_estado", "c"),
+            new Restriccion("ck_tarea_revision_riesgo_nivel", "c")
         );
 
         restricciones.forEach(restriccion -> {
@@ -244,7 +252,10 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"intento_compensacion", "intecomp_creado_en"},
             new String[] {"intento_compensacion", "intecomp_actualizado_en"},
             new String[] {"intento_compensacion", "intecomp_proximo_intento_en"},
-            new String[] {"intento_compensacion", "intecomp_reclamado_en"}
+            new String[] {"intento_compensacion", "intecomp_reclamado_en"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_creado_en"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_actualizado_en"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_resuelto_en"}
         );
 
         instantes.forEach(par -> assertThat(tipoColumna(par[0], par[1]))
@@ -367,7 +378,14 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             new String[] {"intento_compensacion", "intecomp_proximo_intento_en"},
             new String[] {"intento_compensacion", "intecomp_reclamado_en"},
             new String[] {"intento_compensacion", "intecomp_reclamado_por"},
-            new String[] {"intento_compensacion", "intecomp_actualizado_en"}
+            new String[] {"intento_compensacion", "intecomp_actualizado_en"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_identificador_tarea_motor"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_nivel"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_motivo"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_evidencia"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_actor_usua_id"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_actualizado_en"},
+            new String[] {"tarea_revision_riesgo", "tarereviries_resuelto_en"}
         );
 
         opcionales.forEach(par -> assertThat(esNullable(par[0], par[1]))
@@ -400,6 +418,12 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         assertThat(esNullable("incidente", "inci_reintentos")).isFalse();
         assertThat(tipoColumna("incidente", "inci_reintentos"))
             .isEqualTo("integer");
+        assertThat(esNullable("tarea_revision_riesgo", "tarereviries_estado"))
+            .isFalse();
+        assertThat(esNullable("tarea_revision_riesgo", "tarereviries_version"))
+            .isFalse();
+        assertThat(esNullable("tarea_revision_riesgo", "tarereviries_creado_en"))
+            .isFalse();
     }
 
     @Test
@@ -426,8 +450,10 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             "idx_incidente_referencia",
             "idx_intento_recuperacion",
             "uq_evaluacion_externa_vigente",
+            "uq_evaluacion_manual_vigente",
             "idx_evaluacion_externa_reclamable",
-            "idx_evento_externo_pendiente"
+            "idx_evento_externo_pendiente",
+            "idx_tarea_revision_riesgo_estado"
         );
 
         indices.forEach(indice -> assertThat(contarIndice(indice))
@@ -453,6 +479,16 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         assertThat(indice).contains("evalries_revisoli_id");
         assertThat(indice).containsIgnoringCase("WHERE");
         assertThat(indice).contains("EXTERNO", "PENDIENTE", "RECIBIDA");
+    }
+
+    @Test
+    @DisplayName("Solo existe una evaluación manual vigente por revisión")
+    void indiceUnicoParcialDeEvaluacionManualEstaDefinido() {
+        String indice = definicionIndice("uq_evaluacion_manual_vigente");
+        assertThat(indice).containsIgnoringCase("CREATE UNIQUE INDEX");
+        assertThat(indice).contains("evalries_revisoli_id");
+        assertThat(indice).containsIgnoringCase("WHERE");
+        assertThat(indice).contains("MANUAL");
     }
 
     @Test
@@ -529,6 +565,10 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
             );
         assertThat(definicionRestriccion("ck_evento_externo_nivel"))
             .contains("BAJO", "MEDIO", "ALTO");
+        assertThat(definicionRestriccion("ck_tarea_revision_riesgo_estado"))
+            .contains("PENDIENTE", "RESUELTA", "CANCELADA");
+        assertThat(definicionRestriccion("ck_tarea_revision_riesgo_nivel"))
+            .contains("BAJO", "MEDIO", "ALTO");
         assertThat(definicionRestriccion("ck_incidente_tipo"))
             .contains("EJECUCION", "COMPENSACION", "RIESGO_EXTERNO");
         assertThat(definicionRestriccion("ck_incidente_estado"))
@@ -548,6 +588,7 @@ class PruebaEsquemaTest extends PruebaIntegracionBase {
         assertThat(contarChecks("evaluacion_riesgo")).isEqualTo(3L);
         assertThat(contarChecks("evento_externo")).isEqualTo(2L);
         assertThat(contarChecks("incidente")).isEqualTo(2L);
+        assertThat(contarChecks("tarea_revision_riesgo")).isEqualTo(2L);
     }
 
     private List<String> columnas(String tabla) {

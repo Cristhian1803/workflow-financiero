@@ -52,13 +52,18 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
     private static final String RUTA_LOGIN = "/api/v1/autenticacion/iniciar-sesion";
     private static final String RUTA_YO = "/api/v1/autenticacion/yo";
     private static final String RUTA_TAREAS = "/api/v1/tareas-aprobacion";
+    private static final String RUTA_REVISION_RIESGO =
+        "/api/v1/tareas-revision-riesgo";
+    private static final String RUTA_REVISION_RESOLVER =
+        RUTA_REVISION_RIESGO + "/00000000-0000-0000-0000-000000000001/resolver";
     private static final String RUTA_TAREA_APROBAR =
         RUTA_TAREAS + "/00000000-0000-0000-0000-000000000001/aprobar";
     private static final String RUTA_TAREA_RECHAZAR =
         RUTA_TAREAS + "/00000000-0000-0000-0000-000000000001/rechazar";
     private static final String USUARIOS_DEMO =
         "'demo', 'demo2', 'auditor', 'admin', 'supervisor', 'gerente', "
-            + "'riesgos', 'gerente_general', 'jefe_riesgos', 'operaciones'";
+            + "'riesgos', 'gerente_general', 'jefe_riesgos', "
+            + "'analista_riesgos', 'operaciones'";
 
     @Autowired
     MockMvc mockMvc;
@@ -366,8 +371,8 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
         Long despues = contarUsuariosDemo();
         String hashDespues = hashDemo();
 
-        assertThat(antes).isEqualTo(10L);
-        assertThat(despues).isEqualTo(10L);
+        assertThat(antes).isEqualTo(11L);
+        assertThat(despues).isEqualTo(11L);
         assertThat(hashDespues).isEqualTo(hashAntes);
         assertThat(hashDespues).startsWith("$2");
     }
@@ -404,6 +409,64 @@ class PruebaSeguridadTest extends PruebaIntegracionBase {
         mockMvc.perform(conToken(
                 get(RUTA_TAREAS), iniciarSesion("supervisor", "demo")))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("La revisión manual exige autenticación")
+    void revisionRiesgoExigeAutenticacion() throws Exception {
+        mockMvc.perform(get(RUTA_REVISION_RIESGO))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.codigo").value("NO_AUTENTICADO"));
+    }
+
+    @Test
+    @DisplayName("La revisión manual rechaza a un solicitante")
+    void revisionRiesgoRechazaSolicitante() throws Exception {
+        mockMvc.perform(conToken(
+                get(RUTA_REVISION_RIESGO), iniciarSesion("demo", "demo")))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    @Test
+    @DisplayName("La revisión manual rechaza al rol de aprobación RIESGOS")
+    void revisionRiesgoRechazaRolAprobacion() throws Exception {
+        mockMvc.perform(conToken(
+                get(RUTA_REVISION_RIESGO), iniciarSesion("riesgos", "demo")))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.codigo").value("ACCESO_DENEGADO"));
+    }
+
+    @Test
+    @DisplayName("La revisión manual admite al analista y al jefe de Riesgos")
+    void revisionRiesgoAdmiteRevisores() throws Exception {
+        mockMvc.perform(conToken(
+                get(RUTA_REVISION_RIESGO),
+                iniciarSesion("analista_riesgos", "demo")))
+            .andExpect(status().isOk());
+        mockMvc.perform(conToken(
+                get(RUTA_REVISION_RIESGO),
+                iniciarSesion("jefe_riesgos", "demo")))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Resolver una revisión inexistente responde 404")
+    void resolverRevisionInexistente() throws Exception {
+        mockMvc.perform(conToken(
+                post(RUTA_REVISION_RESOLVER),
+                iniciarSesion("analista_riesgos", "demo"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "nivelRiesgo": "ALTO",
+                      "motivo": "Proveedor sin respuesta",
+                      "evidencia": "Registro de consulta"
+                    }
+                    """))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.codigo")
+                .value("TAREA_REVISION_NO_ENCONTRADA"));
     }
 
     @Test

@@ -61,6 +61,8 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
     static final String RUTA_NOTIFICACIONES = "/api/v1/notificaciones";
     static final String RUTA_INCIDENTES = "/api/v1/incidentes";
     static final String RUTA_RIESGO = FiltroFirmaRiesgoExterno.RUTA;
+    static final String RUTA_REVISION_RIESGO =
+        "/api/v1/tareas-revision-riesgo";
     static final String PROVEEDOR_RIESGO = "proveedor-riesgo-simulado";
     static final String RUTA_LOGIN =
         "/api/v1/autenticacion/iniciar-sesion";
@@ -68,7 +70,8 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
     static final String MENSAJE_RIESGO = "RIESGO_EVALUADO";
     static final String USUARIOS_DEMO =
         "'demo', 'demo2', 'auditor', 'admin', 'supervisor', 'gerente', "
-            + "'riesgos', 'gerente_general', 'jefe_riesgos', 'operaciones'";
+            + "'riesgos', 'gerente_general', 'jefe_riesgos', "
+            + "'analista_riesgos', 'operaciones'";
 
     @Autowired
     MockMvc mockMvc;
@@ -130,7 +133,7 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
         jdbcTemplate.execute("TRUNCATE TABLE operacion_simulada");
         jdbcTemplate.execute(
-            "TRUNCATE TABLE evento_externo, evaluacion_riesgo");
+            "TRUNCATE TABLE evento_externo, evaluacion_riesgo, tarea_revision_riesgo");
         proveedorDirecto.reiniciar();
         proveedorRiesgo.reiniciar();
         sembrador.sembrar();
@@ -143,7 +146,7 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
         jdbcTemplate.execute("TRUNCATE TABLE solicitud_financiera CASCADE");
         jdbcTemplate.execute("TRUNCATE TABLE operacion_simulada");
         jdbcTemplate.execute(
-            "TRUNCATE TABLE evento_externo, evaluacion_riesgo");
+            "TRUNCATE TABLE evento_externo, evaluacion_riesgo, tarea_revision_riesgo");
         proveedorDirecto.reiniciar();
         proveedorRiesgo.reiniciar();
         activarUsuariosDemo();
@@ -226,6 +229,32 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
                 token(usuario))
             .contentType(MediaType.APPLICATION_JSON)
             .content(objectMapper.writeValueAsBytes(cuerpo)));
+    }
+
+    ResultActions resolverRevisionRiesgo(
+        String tareaId,
+        String usuario,
+        String nivel,
+        String motivo,
+        String evidencia
+    ) throws Exception {
+        Map<String, Object> cuerpo = new LinkedHashMap<>();
+        cuerpo.put("nivelRiesgo", nivel);
+        cuerpo.put("motivo", motivo);
+        cuerpo.put("evidencia", evidencia);
+        return mockMvc.perform(conToken(
+                post(RUTA_REVISION_RIESGO + "/" + tareaId + "/resolver"),
+                token(usuario))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsBytes(cuerpo)));
+    }
+
+    JsonNode listarRevisionesRiesgo(String usuario) throws Exception {
+        MvcResult resultado = mockMvc.perform(conToken(
+                get(RUTA_REVISION_RIESGO), token(usuario)))
+            .andExpect(status().isOk())
+            .andReturn();
+        return leer(resultado);
     }
 
     ResultActions cancelar(
@@ -919,6 +948,57 @@ abstract class PruebaProcesoAprobacionBase extends PruebaIntegracionBase {
                 + "WHERE evalries_revisoli_id = ? "
                 + "AND evalries_origen = 'EXTERNO'",
             String.class,
+            UUID.fromString(revisionId));
+    }
+
+    String estadoEvaluacionManual(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT evalries_estado FROM evaluacion_riesgo "
+                + "WHERE evalries_revisoli_id = ? "
+                + "AND evalries_origen = 'MANUAL'",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    String nivelEvaluacionManual(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT evalries_nivel FROM evaluacion_riesgo "
+                + "WHERE evalries_revisoli_id = ? "
+                + "AND evalries_origen = 'MANUAL'",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    long contarEvaluacionesManuales(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM evaluacion_riesgo "
+                + "WHERE evalries_revisoli_id = ? "
+                + "AND evalries_origen = 'MANUAL'",
+            Long.class,
+            UUID.fromString(revisionId));
+    }
+
+    String idTareaRevisionRiesgo(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT tarereviries_id::text FROM tarea_revision_riesgo "
+                + "WHERE tarereviries_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    String estadoTareaRevisionRiesgo(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT tarereviries_estado FROM tarea_revision_riesgo "
+                + "WHERE tarereviries_revisoli_id = ?",
+            String.class,
+            UUID.fromString(revisionId));
+    }
+
+    long contarTareasRevisionRiesgo(String revisionId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM tarea_revision_riesgo "
+                + "WHERE tarereviries_revisoli_id = ?",
+            Long.class,
             UUID.fromString(revisionId));
     }
 

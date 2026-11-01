@@ -32,6 +32,7 @@ import org.flowable.bpmn.model.BoundaryEvent;
 import org.flowable.bpmn.model.BpmnModel;
 import org.flowable.bpmn.model.EndEvent;
 import org.flowable.bpmn.model.EventDefinition;
+import org.flowable.bpmn.model.EventGateway;
 import org.flowable.bpmn.model.EventSubProcess;
 import org.flowable.bpmn.model.ExclusiveGateway;
 import org.flowable.bpmn.model.FlowElement;
@@ -133,7 +134,7 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
             "UPDATE usuario SET usua_activo = TRUE "
                 + "WHERE usua_usuario IN ('demo', 'demo2', 'auditor', 'admin', "
                 + "'supervisor', 'gerente', 'riesgos', 'gerente_general', "
-                + "'jefe_riesgos', 'operaciones')");
+                + "'jefe_riesgos', 'analista_riesgos', 'operaciones')");
     }
 
     @AfterEach
@@ -168,6 +169,7 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(proceso.getFlowElement("marcarPendienteAprobacion")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("verificarAutorizacion")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("verificarRiesgoExterno")).isInstanceOf(ServiceTask.class);
+        assertThat(proceso.getFlowElement("prepararRevisionManual")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("marcarAprobada")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("prepararEjecucion")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("esperarResultadoEjecucion"))
@@ -180,6 +182,16 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
         assertThat(proceso.getFlowElement("registrarRechazo")).isInstanceOf(ServiceTask.class);
         assertThat(proceso.getFlowElement("decidirAprobaciones")).isNotNull();
         assertThat(proceso.getFlowElement("decidirRiesgoExterno")).isNotNull();
+        assertThat(proceso.getFlowElement("esperarEventoRiesgoExterno"))
+            .isInstanceOf(EventGateway.class);
+        assertThat(proceso.getFlowElement("vencerRiesgoExterno"))
+            .isInstanceOf(IntermediateCatchEvent.class);
+        assertThat(proceso.getFlowElement("decidirRevisionManual"))
+            .isInstanceOf(ExclusiveGateway.class);
+        assertThat(proceso.getFlowElement("tareaRevisionRiesgoManual"))
+            .isInstanceOf(UserTask.class);
+        assertThat(proceso.getFlowElement("finRiesgoVencidoSinRevision"))
+            .isInstanceOf(EndEvent.class);
         assertThat(proceso.getFlowElement("ramasAprobacion")).isInstanceOf(InclusiveGateway.class);
         assertThat(proceso.getFlowElement("unionAprobaciones")).isInstanceOf(InclusiveGateway.class);
         assertThat(proceso.getFlowElement("tareaSupervisor")).isInstanceOf(UserTask.class);
@@ -300,6 +312,7 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
             Map.entry("marcarPendienteAprobacion", "delegadoMarcarPendienteAprobacion"),
             Map.entry("verificarAutorizacion", "delegadoVerificarAutorizacion"),
             Map.entry("verificarRiesgoExterno", "delegadoVerificarRiesgoExterno"),
+            Map.entry("prepararRevisionManual", "delegadoPrepararRevisionManual"),
             Map.entry("marcarAprobada", "delegadoMarcarAprobada"),
             Map.entry("prepararEjecucion", "delegadoPrepararEjecucion"),
             Map.entry("marcarEjecutada", "delegadoMarcarEjecutada"),
@@ -357,6 +370,36 @@ class PruebaProcesoPrincipalTest extends PruebaIntegracionBase {
             .orElseThrow();
 
         assertThat(mensaje.getId()).isEqualTo("mensajeRiesgoEvaluado");
+    }
+
+    @Test
+    @DisplayName("El vencimiento externo compite con el mensaje y abre revisión manual")
+    void vencimientoRiesgoUsaTimerYTareaManual() {
+        Process proceso = modelo().getMainProcess();
+        EventGateway gateway = (EventGateway) proceso
+            .getFlowElement("esperarEventoRiesgoExterno");
+
+        assertThat(gateway.getOutgoingFlows())
+            .extracting(SequenceFlow::getTargetRef)
+            .containsExactlyInAnyOrder(
+                "esperarRiesgoExterno",
+                "vencerRiesgoExterno"
+            );
+
+        IntermediateCatchEvent vencimiento = (IntermediateCatchEvent) proceso
+            .getFlowElement("vencerRiesgoExterno");
+        TimerEventDefinition timer = vencimiento.getEventDefinitions().stream()
+            .filter(TimerEventDefinition.class::isInstance)
+            .map(TimerEventDefinition.class::cast)
+            .findFirst()
+            .orElseThrow();
+        assertThat(timer.getTimeDuration())
+            .isEqualTo("${duracionRiesgoExterno}");
+
+        UserTask manual = (UserTask) proceso
+            .getFlowElement("tareaRevisionRiesgoManual");
+        assertThat(manual.getCandidateGroups())
+            .containsExactlyInAnyOrder("ANALISTA_RIESGOS", "JEFE_RIESGOS");
     }
 
     @Test
