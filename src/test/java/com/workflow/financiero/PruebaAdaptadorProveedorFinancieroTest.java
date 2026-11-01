@@ -69,7 +69,7 @@ class PruebaAdaptadorProveedorFinancieroTest {
         propiedades = new PropiedadesProveedorFinanciero(
             URI.create(WIREMOCK.baseUrl() + RUTA),
             Duration.ofSeconds(2),
-            Duration.ofMillis(200),
+            Duration.ofSeconds(1),
             SECRETO
         );
         adaptador = new AdaptadorProveedorFinancieroHttp(propiedades);
@@ -177,7 +177,7 @@ class PruebaAdaptadorProveedorFinancieroTest {
         OperacionFinanciera operacion = operacion(AccionFinanciera.RESERVA);
         WIREMOCK.stubFor(post(urlEqualTo(RUTA + "/reservas"))
             .willReturn(respuesta(200, operacion, "RESERVADA", "RES-1")
-                .withFixedDelay(1000)));
+                .withFixedDelay(2000)));
 
         assertThatThrownBy(() -> adaptador.reservar(operacion))
             .isInstanceOf(ErrorRecuperableProveedorFinancieroException.class);
