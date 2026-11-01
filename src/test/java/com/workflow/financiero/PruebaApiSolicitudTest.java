@@ -572,9 +572,9 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
     }
 
     @Test
-    @DisplayName("OpenAPI publica bearerAuth y las rutas de solicitudes")
+    @DisplayName("OpenAPI publica la seguridad, las rutas y el error uniforme")
     void publicaOpenApiConSeguridad() throws Exception {
-        mockMvc.perform(get("/v3/api-docs"))
+        MvcResult resultado = mockMvc.perform(get("/v3/api-docs"))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.type")
                 .value("http"))
@@ -582,6 +582,10 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
                 .value("bearer"))
             .andExpect(jsonPath("$.components.securitySchemes.bearerAuth.bearerFormat")
                 .value("JWT"))
+            .andExpect(jsonPath("$.security[0].bearerAuth").exists())
+            .andExpect(jsonPath("$.components.schemas.ErrorApiRespuesta").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/autenticacion/iniciar-sesion'].post")
+                .exists())
             .andExpect(jsonPath("$.paths['/api/v1/solicitudes'].post").exists())
             .andExpect(jsonPath("$.paths['/api/v1/solicitudes'].get").exists())
             .andExpect(jsonPath("$.paths['/api/v1/solicitudes/{id}'].get").exists())
@@ -590,7 +594,23 @@ class PruebaApiSolicitudTest extends PruebaIntegracionBase {
             .andExpect(jsonPath("$.paths['/api/v1/solicitudes/{id}/proceso'].get")
                 .exists())
             .andExpect(jsonPath("$.paths['/api/v1/solicitudes/{id}/cancelar'].post")
-                .exists());
+                .exists())
+            .andExpect(jsonPath("$.paths['/api/v1/tareas-aprobacion'].get")
+                .exists())
+            .andExpect(jsonPath("$.paths['/api/v1/tareas-revision-riesgo'].get")
+                .exists())
+            .andExpect(jsonPath("$.paths['/api/v1/notificaciones'].get").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/incidentes'].get").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/integraciones/riesgos/notificacion'].post")
+                .exists())
+            .andExpect(jsonPath("$.paths['/api/v1/solicitudes-prueba']")
+                .doesNotExist())
+            .andReturn();
+
+        assertThat(resultado.getResponse().getContentAsString())
+            .doesNotContain("JWT_SECRETO")
+            .doesNotContain("PROVEEDOR_FINANCIERO_SECRETO")
+            .doesNotContain("RIESGO_EXTERNO_SECRETO");
     }
 
     private JsonNode crear(String usuario, Map<String, Object> cuerpo) throws Exception {
