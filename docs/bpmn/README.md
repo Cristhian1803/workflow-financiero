@@ -29,12 +29,15 @@ Cada rama tiene su propia variable de decisión: `decisionSupervisor`, `decision
 6. Cada tarea humana puede aprobar o rechazar. Un rechazo pasa por `registrarRechazo` y
    termina la instancia con `terminateAll=true`.
 7. Las aprobaciones se unen en una compuerta inclusiva y luego se verifica la autorización.
-8. Si el monto requiere evaluación externa, espera el mensaje `RIESGO_EVALUADO`. La
+8. Si el monto requiere evaluación externa, el proceso entra en un gateway de eventos que
+   compite entre el mensaje `RIESGO_EVALUADO` y el timer `vencerRiesgoExterno`. La
    aplicación guarda el evento firmado en el inbox, consolida el máximo entre riesgo interno
    y externo y envía el mensaje a la instancia específica. El delegate lee la evaluación
    persistida, verifica el evento aplicado y solo entonces permite continuar. Un evento
-   temprano queda pendiente y se reintenta; uno de una revisión anterior o terminal queda
-   obsoleto. El evento no crea ni modifica aprobaciones.
+   temprano queda pendiente y se reintenta; uno de una revisión anterior, cancelada, en
+   revisión manual o terminal queda obsoleto. El evento no crea ni modifica aprobaciones.
+   Si vence el timer, la evaluación externa pendiente queda `VENCIDA`, la revisión pasa a
+   `REVISION_MANUAL` y se abre `tareaRevisionRiesgoManual`.
 9. Marca la revisión como `APROBADA`, persiste la intención de ejecución y la deja
    en `EJECUTANDO`. El proceso espera el mensaje `EJECUCION_FINALIZADA`.
 10. El trabajador de ejecución reclama la intención, reserva y confirma contra el
@@ -50,8 +53,14 @@ Cada rama tiene su propia variable de decisión: `decisionSupervisor`, `decision
 
 La espera externa se ubica después de la unión para que las tareas puedan abrirse y
 resolverse sin depender del proveedor. La integración simulada, los duplicados, los
-conflictos y los eventos tempranos están implementados. El vencimiento y la revisión
-manual son de una etapa futura.
+conflictos, los eventos tempranos, el vencimiento y la revisión manual están implementados.
+El timer usa la variable ISO-8601 `duracionRiesgoExterno`, configurable por ambiente.
+
+La tarea `tareaRevisionRiesgoManual` tiene grupos candidatos `ANALISTA_RIESGOS` y
+`JEFE_RIESGOS`. Un `TaskListener` copia la tarea a `tarea_revision_riesgo` cuando Flowable
+la crea. La resolución registra nivel, motivo y evidencia, consolida el riesgo y recalcula
+el plan; no crea decisiones de aprobación. Después de resolver, el proceso vuelve a
+`PENDIENTE_APROBACION` y continúa por la verificación ya existente.
 
 La espera de ejecución no llama al proveedor: el delegate solo persiste la intención y
 transiciona la revisión. El trabajador de aplicación hace la llamada externa y luego
@@ -94,8 +103,8 @@ Cada tarea humana tiene dos temporizadores de frontera no interruptores:
 | Gerente | `notificarGerente24h` | `reasignarGerente48h` |
 | Riesgos | `notificarRiesgos24h` | `reasignarRiesgos48h` |
 
-Las duraciones se reciben como variables ISO-8601 (`duracionNotificacion` y
-`duracionReasignacion`). No están fijadas en el XML.
+Las duraciones se reciben como variables ISO-8601 (`duracionNotificacion`,
+`duracionReasignacion` y `duracionRiesgoExterno`). No están fijadas en el XML.
 
 El temporizador de 24 horas crea una notificación persistida para el rol funcional. El de
 48 horas reasigna la tarea al superior configurado, conserva el rol original y no completa la

@@ -86,6 +86,7 @@ $env:EJECUCION_TRABAJADOR_MAX_INTENTOS="3"
 $env:EJECUCION_TRABAJADOR_RECLAMACION_VENCIDA="PT30S"
 $env:EJECUCION_TRABAJADOR_REINTENTO_ESPERA="PT5S"
 $env:RIESGO_EXTERNO_VENTANA_TIEMPO="PT5M"
+$env:RIESGO_EXTERNO_VENCIMIENTO="PT24H"
 $env:RIESGO_EXTERNO_REINTENTO="PT5S"
 $env:RIESGO_EXTERNO_MAXIMO_INTENTOS="3"
 ```
@@ -116,7 +117,8 @@ Solo se crean en `desarrollo` y `pruebas`:
 | `gerente` | `demo` | `GERENTE` | `NORMAL` | Aprobador y superior de Supervisor |
 | `riesgos` | `demo` | `RIESGOS` | `NORMAL` | Aprobador |
 | `gerente_general` | `demo` | `GERENTE_GENERAL` | `NORMAL` | Delegado de Gerente |
-| `jefe_riesgos` | `demo` | `JEFE_RIESGOS` | `NORMAL` | Delegado de Riesgos |
+| `jefe_riesgos` | `demo` | `JEFE_RIESGOS` | `NORMAL` | Delegado de Riesgos y revisor manual |
+| `analista_riesgos` | `demo` | `ANALISTA_RIESGOS` | `NORMAL` | Revisor manual de riesgo |
 | `operaciones` | `demo` | `OPERACIONES` | `NORMAL` | Consulta operativa |
 
 La clave se puede cambiar con `DEMO_CLAVE`. El sembrador es idempotente: no duplica usuarios ni sobrescribe claves existentes.
@@ -183,6 +185,8 @@ La creación requiere el rol `SOLICITANTE` e inicia el proceso BPMN. Si el plan 
 | `GET` | `/api/v1/tareas-aprobacion` | Aprobador o delegado |
 | `POST` | `/api/v1/tareas-aprobacion/{id}/aprobar` | Actor elegible |
 | `POST` | `/api/v1/tareas-aprobacion/{id}/rechazar` | Actor elegible |
+| `GET` | `/api/v1/tareas-revision-riesgo` | `ANALISTA_RIESGOS` o `JEFE_RIESGOS` |
+| `POST` | `/api/v1/tareas-revision-riesgo/{id}/resolver` | Revisor autorizado |
 | `GET` | `/api/v1/notificaciones` | Autenticado |
 | `GET` | `/api/v1/incidentes` | `OPERACIONES` o `ADMINISTRADOR` |
 | `POST` | `/api/v1/incidentes/{id}/reintentar` | `OPERACIONES` o `ADMINISTRADOR` |
@@ -354,7 +358,7 @@ El proceso activa solo las ramas del plan:
 | Hasta 200 millones | Alto | `SUPERVISOR`, `GERENTE`, `RIESGOS` |
 | Más de 200 millones | Alto | `SUPERVISOR`, `GERENTE`, `RIESGOS` |
 
-Gerente y Riesgos son independientes y se pueden aprobar en cualquier orden. Cuando todas las ramas activadas aprobaron, la revisión pasa a `EJECUTANDO` y se persiste la intención de ejecución. Para más de 200 millones, después de las aprobaciones el proceso espera el mensaje `RIESGO_EVALUADO`; la notificación firmada se envía al endpoint de riesgo externo descrito más abajo. No se usa un fixture para resolver esa espera.
+Gerente y Riesgos son independientes y se pueden aprobar en cualquier orden. Cuando todas las ramas activadas aprobaron, la revisión pasa a `EJECUTANDO` y se persiste la intención de ejecución. Para más de 200 millones, después de las aprobaciones el proceso espera el mensaje `RIESGO_EVALUADO` o el vencimiento configurable; si vence, abre la revisión manual descrita más abajo. No se usa un fixture para resolver esa espera.
 
 ## Ejecución financiera simulada
 
@@ -415,9 +419,40 @@ Cuerpo mínimo:
 }
 ```
 
-La aplicación guarda el evento en `evento_externo` antes de correlacionarlo. Si la solicitud, la revisión o la suscripción BPMN todavía no existen, el evento queda `PENDIENTE` y se reintenta sin consumir intentos fallidos. Un duplicado idéntico responde `200 DUPLICADO`; el mismo identificador con otra huella responde `409 EVENTO_EXTERNO_EN_CONFLICTO`; un evento de una revisión anterior o terminal queda `OBSOLETO`.
+La aplicación guarda el evento en `evento_externo` antes de correlacionarlo. Si la solicitud, la revisión o la suscripción BPMN todavía no existen, el evento queda `PENDIENTE` y se reintenta sin consumir intentos fallidos. Un duplicado idéntico responde `200 DUPLICADO`; el mismo identificador con otra huella responde `409 EVENTO_EXTERNO_EN_CONFLICTO`; un evento de una revisión anterior, cancelada, en revisión manual o terminal queda `OBSOLETO`.
 
 Cuando el proceso espera `RIESGO_EVALUADO`, la aplicación consolida el máximo entre riesgo interno y externo, registra `EVALUACION_EXTERNA_RESUELTA`, marca el evento `PROCESADO` y envía el mensaje a la instancia específica. El delegate lee la evaluación persistida y no confía en variables del mensaje. El evento no crea ni modifica aprobaciones.
+
+### Vencimiento y revisión manual
+
+Después de las aprobaciones, el proceso espera el resultado externo con un gateway de eventos que compite entre el mensaje `RIESGO_EVALUADO` y un timer configurable:
+
+```text
+RIESGO_EXTERNO_VENCIMIENTO=PT24H
+```
+
+El vencimiento se mide desde que el proceso entra en la espera. Si el timer gana, la evaluación externa pendiente queda `VENCIDA`, la revisión pasa a `REVISION_MANUAL` y se crea una tarea humana. El evento externo que llegue después queda `OBSOLETO`.
+
+La tarea manual se consulta y resuelve con:
+
+```text
+GET  /api/v1/tareas-revision-riesgo
+POST /api/v1/tareas-revision-riesgo/{id}/resolver
+```
+
+Cuerpo:
+
+```json
+{
+  "nivelRiesgo": "ALTO",
+  "motivo": "El proveedor externo no respondió en el plazo",
+  "evidencia": "Consulta y registro de incidente"
+}
+```
+
+Solo `ANALISTA_RIESGOS` y `JEFE_RIESGOS` pueden listar y resolver. El creador de la solicitud no resuelve su propia revisión. La resolución registra actor, fecha, nivel, motivo y evidencia, consolida el máximo con el riesgo interno, recalcula el plan y devuelve el proceso a la espera de ejecución. No crea decisiones de aprobación ni exime de las aprobaciones existentes. Una segunda resolución responde `409 REVISION_RIESGO_YA_RESUELTA`.
+
+Si los reintentos de envío o correlación se agotan, se crea un incidente `RIESGO_EXTERNO` no reintentable. La recuperación es la revisión manual; el incidente se resuelve cuando se aplica el resultado o se cancela la solicitud.
 
 Ejemplo de firma en PowerShell:
 
@@ -472,6 +507,8 @@ GET  /api/v1/incidentes
 POST /api/v1/incidentes/{id}/reintentar
 ```
 
+Los incidentes de riesgo externo se consultan en la misma bandeja, pero no admiten reintento operativo: su recuperación es la tarea manual de riesgo.
+
 El reintento exige `OPERACIONES` o `ADMINISTRADOR`, revalida la autorización y la revisión actual, conserva la clave y la huella, registra actor y motivo y no crea una segunda intención. Responde `200` si resuelve, `202` si el resultado sigue incierto y `409` si el incidente no admite un reintento seguro.
 
 ## Cancelación y compensación
@@ -504,7 +541,7 @@ La tabla `intento_compensacion` conserva el estado durable de la cancelación (`
 
 La carrera contra el despacho se resuelve con las mismas claves estables y la idempotencia del proveedor: si la confirmación gana, la liberación falla y la revisión queda `EJECUTADA`; si la liberación gana, la confirmación falla y la revisión queda `CANCELADA`. El trabajador de compensación retoma las intenciones `PENDIENTE` y las liberaciones `LIBERANDO` que quedaron interrumpidas por un reinicio.
 
-La integración de riesgo externo simulada ya está implementada. El vencimiento y la revisión manual de riesgo quedan para la siguiente etapa.
+La integración de riesgo externo simulada, su vencimiento y la revisión manual están implementados. El proveedor de riesgo real queda para una etapa posterior.
 
 ### Reenvío
 
@@ -539,8 +576,11 @@ No es la API final de solicitudes.
 - Los roles del token no cambian hasta que vence; `/autenticacion/yo` muestra los roles actuales de la base.
 - El sembrador no crea usuarios en producción. La provisión de usuarios reales queda fuera de esta iteración.
 - La API cancela solicitudes y usa un proveedor financiero simulado; no ejecuta operaciones financieras reales. El reenvío está disponible solo para el dueño y con las reglas de la sección de reenvío.
-- Las rutas combinadas, el paralelismo, el rechazo, el reenvío, la cancelación, la compensación, la recuperación de ejecuciones inciertas y la integración simulada de riesgo externo están implementados. El proveedor de riesgo real y la revisión manual quedan para etapas posteriores.
-- El incidente de ejecución no usa `REVISION_MANUAL` para no bloquear el reintento seguro; la intervención se realiza desde la API de incidentes. La compensación usa `REVISION_MANUAL` como estado de su propia intención, no como estado de la revisión.
+- Las rutas combinadas, el paralelismo, el rechazo, el reenvío, la cancelación, la compensación, la recuperación de ejecuciones inciertas y la integración simulada de riesgo externo con vencimiento y revisión manual están implementados. El proveedor de riesgo real queda para etapas posteriores.
+- El incidente de ejecución no usa `REVISION_MANUAL` para no bloquear el reintento seguro; la intervención se realiza desde la API de incidentes. La compensación usa `REVISION_MANUAL` como estado de su propia intención, no como estado de la revisión. La revisión manual de riesgo también usa `REVISION_MANUAL`, pero se distingue por la existencia de `tarea_revision_riesgo`.
+- El vencimiento se mide desde que el proceso entra en la espera externa, después de las aprobaciones. Un evento temprano que llegue antes de la suscripción sigue esperando sin consumir intentos.
+- Un evento cuya revisión nunca aparece queda `PENDIENTE` en el inbox. No se agregó una vigencia separada para eventos huérfanos en esta iteración.
+- Si el plan recalculado por la revisión manual no coincide con las tareas existentes, la resolución se rechaza y la revisión permanece en `REVISION_MANUAL`. Con la política actual el plan no cambia porque la evaluación externa solo aplica por encima de 200 millones.
 - La notificación de 24 horas y la reasignación de 48 horas están implementadas. No hay reasignación manual por administrador ni notificación por correo.
 - No se implementó marcar notificaciones como leídas.
 - Si el superior elegido es el creador, la tarea queda asignada a una persona que no puede aprobarla; la recuperación operativa es de una etapa posterior.

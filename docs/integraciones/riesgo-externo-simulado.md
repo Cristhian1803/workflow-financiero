@@ -66,6 +66,7 @@ flujo:
     proveedor: ${RIESGO_EXTERNO_PROVEEDOR:proveedor-riesgo-simulado}
     secreto: ${RIESGO_EXTERNO_SECRETO:}
     ventana-tiempo: ${RIESGO_EXTERNO_VENTANA_TIEMPO:PT5M}
+    vencimiento: ${RIESGO_EXTERNO_VENCIMIENTO:PT24H}
     reintento: ${RIESGO_EXTERNO_REINTENTO:PT5S}
     maximo-intentos: ${RIESGO_EXTERNO_MAXIMO_INTENTOS:3}
 ```
@@ -79,7 +80,7 @@ guardan secretos ni firmas completas.
 |---|---|---|
 | Evento aplicado | `200` | `estado: PROCESADO` |
 | Duplicado idéntico | `200` | `estado: DUPLICADO` |
-| Revisión anterior o terminal | `200` | `estado: OBSOLETO` |
+| Revisión anterior, cancelada, en revisión manual o terminal | `200` | `estado: OBSOLETO` |
 | Proceso todavía no espera | `202` | `estado: PENDIENTE` |
 | Firma ausente o inválida | `401` | `NO_AUTENTICADO` |
 | Fecha o cuerpo inválidos | `400` | `EVENTO_EXTERNO_INVALIDO` o `DATOS_INVALIDOS` |
@@ -117,13 +118,62 @@ El delegate `verificarRiesgoExterno` lee la evaluación persistida y comprueba e
 identificador del evento. No confía en variables del mensaje y no crea
 aprobaciones.
 
+## Vencimiento y revisión manual
+
+Después de las aprobaciones, el proceso entra en un gateway de eventos que
+compite entre el mensaje `RIESGO_EVALUADO` y el timer
+`${duracionRiesgoExterno}`. El valor se configura con
+`RIESGO_EXTERNO_VENCIMIENTO` y se mide desde que el proceso entra en la espera.
+
+Si el timer gana:
+
+1. la evaluación externa pendiente queda `VENCIDA`;
+2. la revisión pasa a `REVISION_MANUAL`;
+3. se registra `EVALUACION_EXTERNA_VENCIDA`;
+4. Flowable crea `tareaRevisionRiesgoManual`;
+5. un `TaskListener` persiste la tarea en `tarea_revision_riesgo`.
+
+La tarea se consulta y resuelve con:
+
+```text
+GET  /api/v1/tareas-revision-riesgo
+POST /api/v1/tareas-revision-riesgo/{id}/resolver
+```
+
+Cuerpo:
+
+```json
+{
+  "nivelRiesgo": "ALTO",
+  "motivo": "El proveedor externo no respondió en el plazo",
+  "evidencia": "Consulta y registro de incidente"
+}
+```
+
+Solo `ANALISTA_RIESGOS` y `JEFE_RIESGOS` pueden listar y resolver. El creador
+de la solicitud no resuelve su propia revisión. La resolución registra actor,
+fecha, nivel, motivo y evidencia, consolida el máximo con el riesgo interno,
+recalcula el plan y devuelve la revisión a `PENDIENTE_APROBACION` para que el
+proceso continúe. No crea decisiones de aprobación.
+
+Una segunda resolución responde `409 REVISION_RIESGO_YA_RESUELTA`. Si el plan
+recalculado no coincide con las tareas existentes, la resolución se rechaza y
+la revisión permanece en `REVISION_MANUAL`.
+
+## Incidentes
+
+Si se agotan los reintentos de envío o correlación, se crea un incidente
+`RIESGO_EXTERNO` con referencia a la revisión. Es no reintentable: la
+recuperación es la revisión manual. El incidente se resuelve cuando se aplica
+el resultado o se cancela la solicitud.
+
 ## Reintentos
 
 El trabajador reclama las evaluaciones externas pendientes con `SKIP LOCKED`,
 llama al proveedor fuera de la transacción y guarda la referencia. Si el envío
 falla, agenda un reintento con la misma clave. Al agotar los intentos deja de
-programar; el vencimiento y la revisión manual corresponden a la etapa
-siguiente.
+programar y crea el incidente de riesgo externo; el vencimiento abre la
+revisión manual.
 
 Los eventos pendientes se reclaman con `SKIP LOCKED` y se correlacionan en una
 transacción nueva. Un fallo recuperable de correlación incrementa intentos y
