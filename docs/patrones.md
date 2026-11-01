@@ -7,7 +7,7 @@ participan, la alternativa que se descartó y la prueba que lo demuestra.
 Los patrones de integración (intención durable, inbox, receptor idempotente,
 reclamación con `SKIP LOCKED`) se describen en
 [`docs/arquitectura.md`](arquitectura.md), porque son mecanismos de comunicación
-y no patrones de diseño del enunciado.
+y no patrones de diseño clásicos.
 
 ## 1. Strategy — políticas de aprobación
 

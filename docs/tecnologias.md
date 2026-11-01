@@ -5,7 +5,7 @@ salen de [`pom.xml`](../pom.xml), de `docker-compose.yml` y de las propiedades d
 proyecto. Cuando una versión la administra Spring Boot, se indica así y no se fija
 a mano.
 
-## Obligatorias del enunciado
+## Tecnologías base
 
 | Tecnología | Versión | Qué es | Para qué se usa aquí | Alternativa descartada |
 |---|---|---|---|---|

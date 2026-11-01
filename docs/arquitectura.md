@@ -256,7 +256,7 @@ del motor, con tareas, compuertas y temporizadores, está en
 
 ## 10. Patrones de integración
 
-Estos mecanismos no son patrones de diseño del enunciado, pero explican cómo el
+Estos mecanismos no son patrones de diseño clásicos, pero explican cómo el
 sistema evita efectos duplicados y pérdidas de estado.
 
 ### Intención durable antes del despacho
@@ -290,6 +290,8 @@ permite reiniciar sin duplicar y, a futuro, correr más de un nodo.
 - [Decisiones de arquitectura](decisiones/README.md)
 - [Limitaciones](limitaciones.md)
 - [Tecnologías](tecnologias.md)
+- [API REST](api.md)
+- [Base de datos](base-de-datos.md)
 - [Proceso BPMN](bpmn/README.md)
 - [Pruebas y evidencia](pruebas.md)
 - [Proveedor financiero simulado](integraciones/proveedor-financiero-simulado.md)
