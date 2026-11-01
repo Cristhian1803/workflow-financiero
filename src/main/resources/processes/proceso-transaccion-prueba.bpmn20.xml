@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="http://workflow.financiero/proceso/transaccion">
+    <process id="procesoTransaccionPrueba" name="Circuito transaccional con aprobacion" isExecutable="true">
+        <documentation>
+            Circuito minimo para verificar la transaccion compartida entre JPA y Flowable.
+        </documentation>
+
+        <startEvent id="inicio"/>
+
+        <sequenceFlow sourceRef="inicio" targetRef="tareaHumana"/>
+
+        <userTask id="tareaHumana" name="Revision y aprobacion" flowable:assignee="demo">
+            <documentation>
+                Espera la decision de un usuario autorizado antes de finalizar el circuito.
+            </documentation>
+        </userTask>
+
+        <sequenceFlow sourceRef="tareaHumana" targetRef="fin"/>
+
+        <endEvent id="fin"/>
+    </process>
+</definitions>

@@ -1,3 +1,6 @@
+# Normaliza los archivos de texto a LF y conserva CRLF solo en los scripts de Windows.
+* text=auto eol=lf
 mvnw text eol=lf
 mvnw.cmd text eol=crlf
+*.cmd text eol=crlf
 *.sh text eol=lf

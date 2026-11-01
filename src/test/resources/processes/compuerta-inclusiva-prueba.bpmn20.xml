@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="http://workflow.financiero/prueba/compuerta-inclusiva">
+
+    <process id="pruebaCompuertaInclusiva" name="Prueba de compuerta inclusiva"
+             isExecutable="true">
+        <documentation>
+            Modelo mínimo para comprobar que la compuerta inclusiva activa solo las
+            ramas necesarias y que la unión espera únicamente las ramas activadas.
+        </documentation>
+
+        <startEvent id="inicio"/>
+        <sequenceFlow id="flujoInicio" sourceRef="inicio" targetRef="decidirRamas"/>
+
+        <exclusiveGateway id="decidirRamas" default="flujoSinRamas"/>
+        <sequenceFlow id="flujoConRamas" sourceRef="decidirRamas" targetRef="ramas">
+            <conditionExpression xsi:type="tFormalExpression">${requiereAlguna == true}</conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="flujoSinRamas" sourceRef="decidirRamas" targetRef="finSinRamas"/>
+
+        <inclusiveGateway id="ramas"/>
+        <sequenceFlow id="flujoSupervisor" sourceRef="ramas" targetRef="tareaSupervisor">
+            <conditionExpression xsi:type="tFormalExpression">${requiereSupervisor == true}</conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="flujoGerente" sourceRef="ramas" targetRef="tareaGerente">
+            <conditionExpression xsi:type="tFormalExpression">${requiereGerente == true}</conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="flujoRiesgos" sourceRef="ramas" targetRef="tareaRiesgos">
+            <conditionExpression xsi:type="tFormalExpression">${requiereRiesgos == true}</conditionExpression>
+        </sequenceFlow>
+
+        <userTask id="tareaSupervisor" name="Supervisor"
+                  flowable:candidateGroups="SUPERVISOR"/>
+        <userTask id="tareaGerente" name="Gerente"
+                  flowable:candidateGroups="GERENTE"/>
+        <userTask id="tareaRiesgos" name="Riesgos"
+                  flowable:candidateGroups="RIESGOS"/>
+
+        <sequenceFlow id="flujoSupervisorDecision" sourceRef="tareaSupervisor"
+                      targetRef="decidirSupervisor"/>
+        <sequenceFlow id="flujoGerenteDecision" sourceRef="tareaGerente"
+                      targetRef="decidirGerente"/>
+        <sequenceFlow id="flujoRiesgosDecision" sourceRef="tareaRiesgos"
+                      targetRef="decidirRiesgos"/>
+
+        <exclusiveGateway id="decidirSupervisor"/>
+        <exclusiveGateway id="decidirGerente"/>
+        <exclusiveGateway id="decidirRiesgos"/>
+
+        <sequenceFlow id="flujoSupervisorAprobado" sourceRef="decidirSupervisor"
+                      targetRef="union">
+            <conditionExpression xsi:type="tFormalExpression">${decisionSupervisor == 'APROBADA'}</conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="flujoSupervisorRechazado" sourceRef="decidirSupervisor"
+                      targetRef="registrarRechazo">
+            <conditionExpression xsi:type="tFormalExpression">${decisionSupervisor == 'RECHAZADA'}</conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="flujoGerenteAprobado" sourceRef="decidirGerente"
+                      targetRef="union">
+            <conditionExpression xsi:type="tFormalExpression">${decisionGerente == 'APROBADA'}</conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="flujoGerenteRechazado" sourceRef="decidirGerente"
+                      targetRef="registrarRechazo">
+            <conditionExpression xsi:type="tFormalExpression">${decisionGerente == 'RECHAZADA'}</conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="flujoRiesgosAprobado" sourceRef="decidirRiesgos"
+                      targetRef="union">
+            <conditionExpression xsi:type="tFormalExpression">${decisionRiesgos == 'APROBADA'}</conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="flujoRiesgosRechazado" sourceRef="decidirRiesgos"
+                      targetRef="registrarRechazo">
+            <conditionExpression xsi:type="tFormalExpression">${decisionRiesgos == 'RECHAZADA'}</conditionExpression>
+        </sequenceFlow>
+
+        <inclusiveGateway id="union"/>
+        <sequenceFlow id="flujoUnion" sourceRef="union" targetRef="finAprobaciones"/>
+        <endEvent id="finAprobaciones"/>
+        <endEvent id="finSinRamas"/>
+
+        <manualTask id="registrarRechazo"/>
+        <sequenceFlow id="flujoRechazo" sourceRef="registrarRechazo" targetRef="finRechazo"/>
+        <endEvent id="finRechazo">
+            <terminateEventDefinition flowable:terminateAll="true"/>
+        </endEvent>
+    </process>
+</definitions>

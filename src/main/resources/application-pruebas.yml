@@ -1,0 +1,15 @@
+spring:
+  config:
+    activate:
+      on-profile: pruebas
+
+flowable:
+  async-executor-activate: false
+  # En pruebas conviven los procesos de src/main y los de src/test.
+  # classpath*: recorre todos los directorios del classpath en vez de quedarse
+  # con el primero que encuentre.
+  process-definition-location-prefix: classpath*:/processes/
+
+ejecucion:
+  trabajador:
+    habilitado: false

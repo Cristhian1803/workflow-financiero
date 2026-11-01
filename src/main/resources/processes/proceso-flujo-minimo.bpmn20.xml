@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"
+             xmlns:flowable="http://flowable.org/bpmn"
+             targetNamespace="http://workflow.financiero/proceso/flujo-minimo">
+    <process id="procesoFlujoMinimo" name="Flujo minimo de solicitud" isExecutable="true">
+        <documentation>
+            Flujo minimo de extremo a extremo con efectos simulados.
+        </documentation>
+
+        <startEvent id="inicio"/>
+
+        <sequenceFlow sourceRef="inicio" targetRef="ejecucionSimulada"/>
+
+        <serviceTask id="ejecucionSimulada" name="Ejecucion simulada de la solicitud"
+                     flowable:delegateExpression="${adaptadorEjecucionPrueba}">
+            <documentation>
+                Marca la solicitud como ejecutada sin llamar a ningun proveedor externo.
+            </documentation>
+        </serviceTask>
+
+        <sequenceFlow sourceRef="ejecucionSimulada" targetRef="fin"/>
+
+        <endEvent id="fin"/>
+    </process>
+</definitions>

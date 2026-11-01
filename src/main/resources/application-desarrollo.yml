@@ -1,0 +1,11 @@
+spring:
+  config:
+    activate:
+      on-profile: desarrollo
+
+flowable:
+  async-executor-activate: true
+
+ejecucion:
+  trabajador:
+    habilitado: true
