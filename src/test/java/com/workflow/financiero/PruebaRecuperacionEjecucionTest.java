@@ -203,6 +203,16 @@ class PruebaRecuperacionEjecucionTest
         assertThat(estadoRevision(revisionId)).isEqualTo("EJECUTADA");
         assertThat(estadoIntento(revisionId)).isEqualTo("CONFIRMADA");
         assertThat(contarOperaciones("CONFIRMACION")).isEqualTo(1);
+        assertThat(actorIncidente(revisionId)).isEqualTo("operaciones");
+        assertThat(motivoIncidente(revisionId))
+            .isEqualTo("Se corrigió la causa del error definitivo");
+        assertThat(reintentosIncidente(revisionId)).isEqualTo(1);
+        assertThat(ultimoResultadoIncidente(revisionId))
+            .isEqualTo("Ejecución confirmada por consulta");
+        assertThat(contarEventosTipoDeRevision(
+            revisionId, "INCIDENTE_REINTENTANDO")).isEqualTo(1);
+        assertThat(contarEventosTipoDeRevision(
+            revisionId, "INCIDENTE_RESUELTO")).isEqualTo(1);
     }
 
     @Test
