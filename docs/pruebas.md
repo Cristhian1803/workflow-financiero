@@ -1,7 +1,7 @@
 # Pruebas automatizadas y evidencia
 
 Este documento resume la suite automatizada del sistema, su relación con los
-escenarios obligatorios y la evidencia observable de cada comportamiento. No
+escenarios principales y la evidencia observable de cada comportamiento. No
 usa porcentajes de cobertura como sustituto de escenarios: cada fila se apoya en
 una prueba concreta y en un efecto verificable.
 
@@ -256,6 +256,15 @@ real para comprobar el comportamiento por HTTP y en la base:
 
 La base local se reinició al terminar para dejar el entorno limpio. Esta prueba
 manual complementa la suite; no sustituye las aserciones automáticas.
+
+## Contrato OpenAPI
+
+La prueba `PruebaApiSolicitudTest.publicaOpenApiConSeguridad` verifica el esquema
+`bearerAuth`, las rutas de negocio principales, el esquema de error uniforme y la
+ausencia del endpoint de demostración. El contrato se generó desde la aplicación
+en ejecución con el perfil `pruebas`: `/swagger-ui.html` y `/v3/api-docs`
+respondieron `200`, y dos descargas consecutivas fueron idénticas. La copia
+versionada está en [`api/openapi.json`](api/openapi.json).
 
 ## Limitaciones conocidas
 
