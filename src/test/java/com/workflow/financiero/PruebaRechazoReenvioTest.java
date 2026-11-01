@@ -594,6 +594,8 @@ class PruebaRechazoReenvioTest extends PruebaProcesoAprobacionBase {
         assertThat(procesoFinalizado(procesoId)).isTrue();
         assertThat(rolesTareasMotor(procesoId)).isEmpty();
         assertThat(contarIntentos(revisionId)).isZero();
+        assertThat(contarOperacionesSimuladas("RESERVA")).isZero();
+        assertThat(contarOperacionesSimuladas("CONFIRMACION")).isZero();
         assertThat(tiposEventoDeRevision(revisionId))
             .contains("RECHAZO_REGISTRADO", "TAREA_CANCELADA")
             .doesNotContain(
