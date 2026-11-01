@@ -11,7 +11,7 @@ una prueba concreta y en un efecto verificable.
 |---|---|
 | Fecha | 2026-11-01 |
 | Rama | `mejora-documentacion` |
-| Commit base (HEAD al iniciar) | `92ccd55` |
+| Commit de la ejecución inicial | `92ccd55` |
 | Sistema operativo | Windows |
 | Java | 21.0.12.1 |
 | Spring Boot | 3.5.16 |
@@ -23,7 +23,10 @@ una prueba concreta y en un efecto verificable.
 La suite usa PostgreSQL real con Testcontainers y Flowable real. No usa H2. Los
 secretos de prueba se generan en cada ejecución y no se versionan.
 
-## Resultado global
+La primera ejecución de referencia se conserva en esta sección. La regresión
+posterior, sobre el commit `160db5c`, se registra por separado más abajo.
+
+## Resultado de la ejecución inicial
 
 ```text
 Tests run: 467, Failures: 0, Errors: 0, Skipped: 0
@@ -31,12 +34,12 @@ BUILD SUCCESS
 Total time: 03:50 min
 ```
 
-La corrida completa se ejecutó después de estabilizar la prueba de recuperación y
-de agregar los tres bordes inferiores a nivel de proceso. No se configuraron
-reintentos de Surefire. Los cambios de esta iteración fueron de pruebas y
-documentación; no se modificó lógica de producción.
+La primera ejecución completa se realizó después de estabilizar la prueba de
+recuperación y de agregar los tres bordes inferiores a nivel de proceso. No se
+configuraron reintentos de Surefire. Los cambios de esa ejecución fueron de
+pruebas y documentación; no se modificó lógica de producción.
 
-### Corridas dirigidas
+### Ejecuciones dirigidas
 
 | Comando | Resultado |
 |---|---|
@@ -47,8 +50,94 @@ documentación; no se modificó lógica de producción.
 | `.\mvnw.cmd clean verify` | 467 pruebas, 0 fallos |
 
 La clase `PruebaRecuperacionEjecucionTest` se ejecutó tres veces adicionales para
-comprobar que la carrera de reclamación quedó cerrada. Las tres corridas dieron
+comprobar que la carrera de reclamación quedó cerrada. Las tres ejecuciones dieron
 16/16.
+
+## Evidencia de regresión
+
+La regresión repitió la suite completa sobre el commit `160db5c`, ejecutó las
+clases críticas por separado y verificó la infraestructura real. El objetivo no
+era volver a demostrar la matriz P/C, sino comprobar que el resultado de la
+ejecución inicial se repite de forma estable.
+
+### Ejecuciones completas
+
+| # | Inicio | Commit | Pruebas | Fallos | Errores | Omitidas | Duración | Resultado |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 2026-11-01 00:35:41 | `160db5c` | 467 | 0 | 0 | 0 | 4,12 min | `BUILD SUCCESS` |
+| 2 | 2026-11-01 00:39:48 | `160db5c` | 467 | 0 | 0 | 0 | 4,15 min | `BUILD SUCCESS` |
+| 3 | 2026-11-01 00:43:57 | `160db5c` | 467 | 0 | 0 | 0 | 4,41 min | `BUILD SUCCESS` |
+
+Comando: `.\mvnw.cmd clean verify`. Los reportes se generan en
+`target/surefire-reports/` en cada ejecución. No se configuraron reintentos de
+Surefire. Las tres ejecuciones dieron el mismo número de pruebas.
+
+### Clases críticas por separado
+
+| Clase | Pruebas | Resultado |
+|---|---:|---|
+| `PruebaConcurrenciaAprobacionTest` | 12 | 0 fallos |
+| `PruebaConcurrenciaCancelacionTest` | 16 | 0 fallos |
+| `PruebaEjecucionIdempotenteTest` | 15 | 0 fallos |
+| `PruebaRecuperacionEjecucionTest` | 16 | 0 fallos |
+| `PruebaCancelacionCompensacionTest` | 24 | 0 fallos |
+| `PruebaEventosRiesgoTest` | 14 | 0 fallos |
+| `PruebaRecuperacionRiesgoTest` | 14 | 0 fallos |
+
+Cada clase se ejecutó en una invocación independiente de Maven, con JVM y
+contenedor nuevos. La ejecución conjunta de las siete clases dio **111 pruebas, 0
+fallos**.
+
+### Negativos, seguridad e infraestructura
+
+| Grupo | Pruebas | Resultado |
+|---|---:|---|
+| Seguridad, segregación, API, escalamiento, tareas y reenvío | 126 | 0 fallos |
+| Transacción, esquema y persistencia con reinicio | 43 | 0 fallos |
+
+El primer grupo cubre `401`, `403`, `404`, `409` y `422`, autoaprobación, doble
+rol, timers y visibilidad de datos ajenos. El segundo cubre la transacción
+compartida JPA/Flowable, el esquema completo, las restricciones y el reinicio de
+contexto con estado persistido.
+
+Las clases con `@TestMethodOrder` y `@DirtiesContext` son autocontenidas: el
+orden crea el estado y el reinicio de contexto comprueba que sobrevive. No son
+dependencias ocultas entre clases.
+
+### Verificación de infraestructura
+
+| Comprobación | Evidencia | Resultado |
+|---|---|---|
+| PostgreSQL real | Imagen `postgres:16-alpine`; la base local reporta `PostgreSQL 16.15` | Verificado |
+| Migraciones desde base vacía | `flyway_schema_history`: V1 a V12 con `success = true` | Verificado |
+| `ddl-auto: validate` | Arranque exitoso con las entidades JPA validadas contra el esquema | Verificado |
+| Flowable real | 39 tablas `act_*` y 3 procesos desplegados | Verificado |
+| Proceso principal | `aprobacionFinanciera` versión 1 desplegado | Verificado |
+| Transacción compartida | `PruebaTransaccionMotorTest`: commit y rollback de JPA y motor | Verificado |
+| Reinicio con estado persistido | `PruebaPersistenciaProveedorTest`, `PruebaPersistenciaRiesgoTest` y `PruebaPersistenciaRevisionRiesgoTest` | Verificado |
+| Limpieza determinista | `TRUNCATE` de negocio y contenedor nuevo por ejecución | Verificado |
+
+### Smoke test manual con base vacía
+
+Se reinició el volumen de PostgreSQL y se levantó la aplicación con el perfil
+`pruebas` y el trabajador habilitado. El arranque aplicó las 12 migraciones y
+creó el esquema de Flowable. Luego se creó una solicitud de 5.000.000 PYG y se
+comprobó por SQL:
+
+- revisión en `EJECUTADA`;
+- intento en `CONFIRMADA` con un solo intento;
+- una `RESERVA` y una `CONFIRMACION` en `operacion_simulada`;
+- cero incidentes;
+- eventos `SOLICITUD_CREADA`, `RIESGO_CLASIFICADO`, `PLAN_APROBACION_CALCULADO`,
+  `PROCESO_INICIADO`, `EJECUCION_INICIADA` y `EJECUCION_CONFIRMADA`.
+
+Al terminar se detuvo la aplicación y se reinició el volumen para dejar el
+entorno limpio.
+
+### Fallos y bloqueos
+
+Ninguno. Las tres ejecuciones completas y todas las ejecuciones dirigidas terminaron
+en verde.
 
 ## Escenarios P-01 a P-10
 
