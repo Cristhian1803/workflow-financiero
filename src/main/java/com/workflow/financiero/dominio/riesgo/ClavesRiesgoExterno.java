@@ -13,4 +13,8 @@ public final class ClavesRiesgoExterno {
     public static String solicitud(UUID solicitudId, UUID revisionId) {
         return "riesgo:" + solicitudId + ":" + revisionId;
     }
+
+    public static String manual(UUID solicitudId, UUID revisionId) {
+        return "manual:" + solicitudId + ":" + revisionId;
+    }
 }

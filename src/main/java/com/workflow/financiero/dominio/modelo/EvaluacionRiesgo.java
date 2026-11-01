@@ -208,6 +208,7 @@ public class EvaluacionRiesgo {
 
     public void marcarObsoleta(String detalle) {
         if (estado == EstadoEvaluacionRiesgo.RECIBIDA
+            || estado == EstadoEvaluacionRiesgo.MANUAL
             || estado == EstadoEvaluacionRiesgo.OBSOLETA) {
             return;
         }
@@ -217,6 +218,56 @@ public class EvaluacionRiesgo {
         this.reclamadoEn = null;
         this.reclamadoPor = null;
         this.actualizadoEn = Instantes.ahora();
+    }
+
+    /**
+     * Cierra una evaluación externa que no llegó dentro del plazo. Solo una
+     * evaluación pendiente puede vencer; un resultado ya recibido no se toca.
+     */
+    public void marcarVencida(String detalle) {
+        if (estado != EstadoEvaluacionRiesgo.PENDIENTE) {
+            return;
+        }
+        this.estado = EstadoEvaluacionRiesgo.VENCIDA;
+        this.error = limitar(detalle);
+        this.proximoIntentoEn = null;
+        this.reclamadoEn = null;
+        this.reclamadoPor = null;
+        this.actualizadoEn = Instantes.ahora();
+    }
+
+    /**
+     * Registra el resultado de una revisión humana. La evaluación manual no
+     * tiene evento externo ni referencia de proveedor.
+     */
+    public void marcarManual(
+        NivelRiesgo nivel,
+        String resultado,
+        String correlacion
+    ) {
+        if (estado != EstadoEvaluacionRiesgo.PENDIENTE) {
+            throw new IllegalStateException(
+                "La evaluación manual solo se aplica desde PENDIENTE: "
+                    + estado);
+        }
+        if (nivel == null) {
+            throw new IllegalArgumentException(
+                "El nivel de riesgo manual es obligatorio");
+        }
+        this.estado = EstadoEvaluacionRiesgo.MANUAL;
+        this.nivel = nivel;
+        this.resultado = limitar(resultado);
+        this.correlacion = correlacion;
+        this.procesadoEn = Instantes.ahora();
+        this.error = null;
+        this.reclamadoEn = null;
+        this.reclamadoPor = null;
+        this.proximoIntentoEn = null;
+        this.actualizadoEn = this.procesadoEn;
+    }
+
+    public boolean estaManual() {
+        return estado == EstadoEvaluacionRiesgo.MANUAL;
     }
 
     private String limitar(String texto) {
