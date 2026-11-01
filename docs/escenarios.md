@@ -55,6 +55,11 @@ Los plazos de aprobación por defecto siguen siendo `PT24H` y `PT48H`, y el
 vencimiento externo `PT24H`. Los tiempos acelerados son solo para la
 demostración. No se crea un perfil nuevo.
 
+Con los tiempos acelerados, una tarea pendiente se notifica a los 10 segundos y
+se reasigna a los 20. El ejecutor asíncrono puede tardar unos segundos más en
+adquirir el timer. Para recorrer varios escenarios, conviene crear y resolver
+cada solicitud dentro del mismo bloque y no dejarla pendiente entre bloques.
+
 Comprobaciones iniciales:
 
 ```powershell
@@ -313,10 +318,10 @@ resuelve con su rol y la revisión no ejecuta hasta que todas están aprobadas.
 **Pasos:**
 
 1. Crear la solicitud y dejar la tarea de `SUPERVISOR` pendiente.
-2. Esperar aproximadamente 10 segundos. Iniciar sesión como `supervisor` y
-   consultar `GET /api/v1/notificaciones`.
-3. Esperar aproximadamente 20 segundos desde la creación. Consultar de nuevo la
-   bandeja de `supervisor` y la de `gerente`.
+2. Esperar entre 20 y 25 segundos. Iniciar sesión como `supervisor` y consultar
+   `GET /api/v1/notificaciones`.
+3. Esperar hasta 40 segundos desde la creación. Consultar de nuevo la bandeja de
+   `supervisor` y la de `gerente`.
 4. Consultar las notificaciones de `gerente`.
 
 **Resultado esperado:** aparece una notificación `ESCALAMIENTO_24H` para el rol
@@ -383,14 +388,16 @@ quedan `CANCELADA` y no hay reserva ni confirmación.
 
 ### Con reserva
 
-1. Crear una solicitud de 25M y conservar su `id` y su revisión.
+1. Crear una solicitud de 25M y conservar su `id` y su `idRevision`.
 2. Configurar un fallo antes del efecto en la confirmación. El control de fallos
    solo existe en `pruebas`, exige la cabecera `X-Clave-Integracion` y se pierde
-   al reiniciar la aplicación:
+   al reiniciar la aplicación. La clave del simulador usa el identificador de la
+   revisión, no el número de revisión:
 
 ```powershell
 $idSolicitud = "<uuid>"
-$clave = "confirmacion:$idSolicitud`:1"
+$idRevision = "<revision-uuid>"
+$clave = "confirmacion:$idSolicitud`:$idRevision"
 $cuerpo = @{ clave = $clave; modo = "FALLO_ANTES_DEL_EFECTO" } | ConvertTo-Json
 Invoke-RestMethod -Method Post `
   -Uri http://localhost:8080/api/v1/integraciones/proveedor-financiero/pruebas/fallos `
@@ -436,13 +443,15 @@ reintento operativo.
 
 ### Respuesta perdida
 
-1. Crear una solicitud de 25M.
-2. Configurar `RESPUESTA_PERDIDA` en la confirmación:
+1. Crear una solicitud de 25M y conservar su `id` y su `idRevision`.
+2. Configurar `RESPUESTA_PERDIDA` en la confirmación. La clave usa el
+   identificador de la revisión:
 
 ```powershell
 $idSolicitud = "<uuid>"
+$idRevision = "<revision-uuid>"
 $cuerpo = @{
-  clave = "confirmacion:$idSolicitud`:1"
+  clave = "confirmacion:$idSolicitud`:$idRevision"
   modo = "RESPUESTA_PERDIDA"
 } | ConvertTo-Json
 Invoke-RestMethod -Method Post `
@@ -464,7 +473,7 @@ recibió un error y la recuperación consultó la misma clave. El intento queda
 
 1. Crear otra solicitud de 25M.
 2. Configurar `FALLO_ANTES_DEL_EFECTO` en la reserva. Usar el mismo bloque
-   anterior con la clave `reserva:<uuid>:1` y el modo
+   anterior con la clave `reserva:<solicitudId>:<idRevision>` y el modo
    `FALLO_ANTES_DEL_EFECTO`.
 3. Aprobar la tarea de `SUPERVISOR` y esperar a que se abra un incidente de
    ejecución.
@@ -538,8 +547,10 @@ Invoke-RestMethod -Method Post `
   -Body $bytes
 ```
 
-**Resultado esperado:** la primera notificación responde `200` con estado
-`PROCESADO`; la revisión aplica el riesgo externo y continúa hasta `EJECUTADA`.
+**Resultado esperado:** la primera notificación responde `200 PROCESADO` si el
+proceso ya espera. Si todavía no llegó a la espera, responde `202 PENDIENTE` y el
+trabajador la correlaciona. En ambos casos la revisión aplica el riesgo externo y
+continúa hasta `EJECUTADA`.
 
 ### Duplicado, temprano, tardío y conflicto
 
@@ -557,8 +568,8 @@ Invoke-RestMethod -Method Post `
 ### Vencimiento y revisión manual
 
 1. Crear una solicitud de 250M y aprobar las tres tareas.
-2. No enviar la notificación externa. Esperar el vencimiento configurado
-   (`PT15S` en la demostración).
+2. No enviar la notificación externa. Esperar entre 20 y 25 segundos; el timer
+   configurado es `PT15S`, pero el ejecutor puede tardar en adquirirlo.
 3. Iniciar sesión como `analista_riesgos` y consultar
    `GET /api/v1/tareas-revision-riesgo`.
 4. Resolver la tarea con el cuerpo de revisión manual.
